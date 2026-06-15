@@ -7,8 +7,9 @@
   --color-marca-azul: #3b82f6;
   --color-marca-violeta: #7c3aed;
   --color-marca-profundo: #0f172a;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-marca: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-num: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Dark mode por clase (.dark en <html>), no por preferencia del sistema. */
@@ -20,13 +21,19 @@ html, body, #root {
 
 body {
   margin: 0;
-  background-color: #f5f6fa;
-  color: #1f2330;
+  background-color: #e6e9f2;
+  color: #0b1220;
   -webkit-font-smoothing: antialiased;
   font-family: var(--font-sans);
 }
 
-.dark body {
-  background-color: #0b1120;
-  color: #e2e8f0;
+.num {
+  font-family: var(--font-num);
 }
+
+/* Animaciones del prototipo Cuentas Claras */
+@keyframes ccIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ccInL { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ccUp { from { transform: translateY(102%); } to { transform: translateY(0); } }
+@keyframes ccFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ccScr { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
