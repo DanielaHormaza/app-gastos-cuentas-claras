@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
-import { makeInitialState } from './cc/initialState'
-import { parseChat, nowTime, guessIcon } from './cc/logic'
+import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
+import { parseChat, nowTime, guessIcon, adjustSplit, setEqualSplit } from './cc/logic'
 import Inicio from './cc/Inicio'
 import Chat from './cc/Chat'
 import EditSheet from './cc/EditSheet'
-import { Back } from './cc/icons'
+import Profile from './cc/Profile'
+import Archived from './cc/Archived'
+import NewGroup from './cc/NewGroup'
+import { MethodDetail, MonthDetail } from './cc/Detail'
 
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
 const KEY = 'cuentas-claras:v1'
@@ -44,7 +47,7 @@ export default function App() {
     openProfile: () => set({ screen: 'profile', menuOpen: false }),
     openPersonal: () => set({ screen: 'chat', groupId: 'personal', view: 'chat', menuOpen: false, configOpen: false }),
     openGroup: (id) => set({ screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false }),
-    openNewGroup: () => set({ screen: 'newgroup' }),
+    openNewGroup: () => set({ screen: 'newgroup', newGroup: { name: '', desc: '', members: [], memberName: '', invited: false } }),
     openArchived: () => set({ screen: 'archived', groupQuery: '' }),
     backToList: () => set({ screen: 'list' }),
     back: () =>
@@ -202,6 +205,115 @@ export default function App() {
         const l = (prev.ledgers[g] || []).filter((it) => it.id !== prev.editId)
         return { ledgers: { ...prev.ledgers, [g]: l }, editId: null, draft: null, editPanel: null }
       }),
+
+    // ---- gastos futuros / históricos ----
+    toggleMonth: (idx) => set((prev) => ({ expandedMonths: { ...prev.expandedMonths, [idx]: !prev.expandedMonths[idx] } })),
+    setHistSel: (g, key) => set((prev) => ({ histSel: { ...prev.histSel, [g]: key } })),
+    openMethodDetail: (mid) => set({ screen: 'methodDetail', methodId: mid }),
+    openMonthDetail: (key) => set({ screen: 'monthDetail', monthKey: key, monthFilter: null }),
+    setMonthFilter: (id) => set({ monthFilter: id }),
+    backToPersonalHist: () => set({ screen: 'chat' }),
+    backToHist: () => set({ screen: 'chat' }),
+
+    // ---- config de grupo ----
+    onGroupName: (v) => set((prev) => ({ groups: { ...prev.groups, [gid]: { ...prev.groups[gid], name: v, initial: (v.trim()[0] || 'G').toUpperCase() } } })),
+    onGroupDesc: (v) => set((prev) => ({ groups: { ...prev.groups, [gid]: { ...prev.groups[gid], description: v } } })),
+    onChangePhoto: () =>
+      set((prev) => {
+        const i = (GRADIENTS.indexOf(prev.groups[gid].gradient) + 1) % GRADIENTS.length
+        return { groups: { ...prev.groups, [gid]: { ...prev.groups[gid], gradient: GRADIENTS[i] } } }
+      }),
+    onAddMember: () => set({ addingMember: true, newMemberName: '' }),
+    onNewMemberName: (v) => set({ newMemberName: v }),
+    onConfirmAddMember: () =>
+      set((prev) => {
+        const name = prev.newMemberName.trim()
+        if (!name) return {}
+        const g = prev.groups[gid]
+        const id = 'mem' + Date.now()
+        const color = PALETTE[g.members.length % PALETTE.length]
+        const member = { id, name, short: name.split(' ')[0], color, initial: name.trim()[0].toUpperCase() }
+        const splits = setEqualSplit({ ...prev.splits[gid], [id]: 0 })
+        return { groups: { ...prev.groups, [gid]: { ...g, members: [...g.members, member] } }, splits: { ...prev.splits, [gid]: splits }, addingMember: false, newMemberName: '' }
+      }),
+    onEqual: () => set((prev) => ({ splits: { ...prev.splits, [gid]: setEqualSplit(prev.splits[gid]) } })),
+    adjustSplit: (id, delta) => set((prev) => ({ splits: { ...prev.splits, [gid]: adjustSplit(prev.splits[gid], id, delta) } })),
+    onArchive: () => set((prev) => ({ archived: { ...prev.archived, [gid]: true }, configOpen: false, screen: 'list', groupId: null, menuOpen: false })),
+
+    // ---- perfil ----
+    onProfName: (v) => set((prev) => ({ profile: { ...prev.profile, name: v } })),
+    onChangeProfilePhoto: () =>
+      set((prev) => {
+        const i = (GRADIENTS.indexOf(prev.profile.gradient) + 1) % GRADIENTS.length
+        return { profile: { ...prev.profile, gradient: GRADIENTS[i] } }
+      }),
+    openProfMethod: (id) => set((prev) => ({ profMethodEdit: id, profMethodName: (prev.methods.find((m) => m.id === id) || {}).name || '' })),
+    closeProfMethod: () => set({ profMethodEdit: null }),
+    onProfMethodName: (v) => set({ profMethodName: v }),
+    saveProfMethod: () =>
+      set((prev) => {
+        const nm = (prev.profMethodName || '').trim()
+        const id = prev.profMethodEdit
+        if (!nm || !id) return { profMethodEdit: null }
+        return { methods: prev.methods.map((m) => (m.id === id ? { ...m, name: nm } : m)), profMethodEdit: null }
+      }),
+    toggleArchiveProfMethod: () => set((prev) => ({ methods: prev.methods.map((m) => (m.id === prev.profMethodEdit ? { ...m, archived: !m.archived } : m)) })),
+    deleteProfMethod: () =>
+      set((prev) => {
+        const id = prev.profMethodEdit
+        const cnt = (prev.ledgers.personal || []).filter((e) => (e.methodId || null) === id).length
+        if (cnt > 0) return {}
+        return { methods: prev.methods.filter((m) => m.id !== id), profMethodEdit: null }
+      }),
+    deleteMethodExpenses: () => set((prev) => ({ ledgers: { ...prev.ledgers, personal: (prev.ledgers.personal || []).filter((e) => (e.methodId || null) !== prev.profMethodEdit) } })),
+    onAddProfMethod: () => set({ addingProfMethod: true, newProfMethodName: '' }),
+    onNewProfMethodName: (v) => set({ newProfMethodName: v }),
+    onConfirmProfMethod: () =>
+      set((prev) => {
+        const nm = (prev.newProfMethodName || '').trim()
+        if (!nm) return {}
+        return { methods: [...prev.methods, { id: 'pm' + Date.now(), name: nm, icon: '💳' }], addingProfMethod: false, newProfMethodName: '' }
+      }),
+
+    // ---- archivados ----
+    onGroupQuery: (v) => set({ groupQuery: v }),
+    restoreGroup: (id) => set((prev) => { const a = { ...prev.archived }; delete a[id]; return { archived: a } }),
+
+    // ---- nuevo grupo ----
+    onNewGroupField: (field, v) => set((prev) => ({ newGroup: { ...prev.newGroup, [field]: v } })),
+    addNewGroupMember: () =>
+      set((prev) => {
+        const nm = (prev.newGroup.memberName || '').trim()
+        if (!nm) return {}
+        return { newGroup: { ...prev.newGroup, members: [...prev.newGroup.members, { name: nm }], memberName: '' } }
+      }),
+    removeNewGroupMember: (i) => set((prev) => ({ newGroup: { ...prev.newGroup, members: prev.newGroup.members.filter((_, j) => j !== i) } })),
+    inviteLink: () => set((prev) => ({ newGroup: { ...prev.newGroup, invited: true } })),
+    createGroup: () =>
+      set((prev) => {
+        const nm = (prev.newGroup.name || '').trim()
+        if (!nm) return {}
+        const id = 'g' + Date.now()
+        const grad = GRADIENTS[Object.keys(prev.groups).length % GRADIENTS.length]
+        const members = [{ id: 'dani', name: 'Dani (vos)', short: 'Dani', color: '#7C3AED', initial: 'D' }]
+        prev.newGroup.members.forEach((mm, i) => {
+          members.push({ id: 'mem' + id + i, name: mm.name, short: mm.name.split(' ')[0], color: PALETTE[(i + 1) % PALETTE.length], initial: mm.name.trim()[0].toUpperCase() })
+        })
+        const split = {}
+        const base = Math.floor(100 / members.length)
+        let acc = 0
+        members.forEach((mm, i) => { split[mm.id] = i === members.length - 1 ? 100 - acc : base; acc += base })
+        const group = { id, name: nm, initial: nm[0].toUpperCase(), gradient: grad, description: (prev.newGroup.desc || '').trim(), createdAt: '15 jun 2026', members }
+        return {
+          groups: { ...prev.groups, [id]: group },
+          splits: { ...prev.splits, [id]: split },
+          ledgers: { ...prev.ledgers, [id]: [] },
+          threads: { ...prev.threads, [id]: [{ id: 'w' + id, role: 'app', kind: 'text', text: '¡Grupo creado! Cargá el primer gasto escribiéndolo acá.', time: nowTime() }] },
+          payments: { ...prev.payments, [id]: [] },
+          screen: 'chat', groupId: id, view: 'chat',
+          newGroup: { name: '', desc: '', members: [], memberName: '', invited: false },
+        }
+      }),
   }
 
   return (
@@ -209,27 +321,13 @@ export default function App() {
       <div style={{ position: 'relative', width: '100%', maxWidth: 460, minHeight: '100dvh', background: '#FBFCFE', overflow: 'hidden' }}>
         {s.screen === 'list' && <Inicio s={s} actions={actions} />}
         {s.screen === 'chat' && <Chat s={s} actions={actions} />}
-        {(s.screen === 'profile' || s.screen === 'archived' || s.screen === 'newgroup') && <Placeholder s={s} actions={actions} />}
+        {s.screen === 'profile' && <Profile s={s} actions={actions} />}
+        {s.screen === 'archived' && <Archived s={s} actions={actions} />}
+        {s.screen === 'newgroup' && <NewGroup s={s} actions={actions} />}
+        {s.screen === 'methodDetail' && <MethodDetail s={s} actions={actions} />}
+        {s.screen === 'monthDetail' && <MonthDetail s={s} actions={actions} />}
 
         {s.editId != null && <EditSheet s={s} actions={actions} />}
-      </div>
-    </div>
-  )
-}
-
-/** Pantallas de la segunda tanda (perfil / archivados / nuevo grupo). */
-function Placeholder({ s, actions }) {
-  const title = s.screen === 'profile' ? 'Mi perfil' : s.screen === 'archived' ? 'Grupos archivados' : 'Nuevo grupo'
-  return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#FBFCFE', animation: 'ccIn .26s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 14px', borderBottom: '1px solid #EEF1F6' }}>
-        <div onClick={actions.backToList} style={{ width: 38, height: 38, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Back /></div>
-        <span style={{ fontWeight: 800, fontSize: 18, color: '#0B1220' }}>{title}</span>
-      </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, color: '#B6BFCC' }}>
-        <div style={{ fontSize: 34, marginBottom: 10 }}>🛠️</div>
-        <div style={{ fontSize: 15, fontWeight: 800, color: '#64748B', marginBottom: 4 }}>Próximamente</div>
-        <div style={{ fontSize: 13, fontWeight: 600, maxWidth: 260 }}>Esta pantalla es parte de la segunda tanda del rediseño.</div>
       </div>
     </div>
   )

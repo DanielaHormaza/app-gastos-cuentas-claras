@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { compute, balancePhrase, catById, memberById, descFor, fmt } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
+import { Futuros, Historicos } from './GroupViews'
+import Config from './Config'
 
 const card = { background: '#fff', border: '1px solid #EAEEF4', boxShadow: '0 6px 18px -12px rgba(15,23,42,.35)' }
 const aiAvatar = { width: 28, height: 28, borderRadius: '50%', background: BRAND_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: 13, fontWeight: 800 }
@@ -52,7 +54,10 @@ export default function Chat({ s, actions }) {
       {s.view === 'ledger' && (
         <LedgerView s={s} g={g} c={c} bannerLabel={g.personal ? 'Gastado · junio' : 'Saldo en el grupo'} balancePre={balancePre} balanceAmount={balanceAmount} balancePost={balancePost} balanceColor={balanceColor} actions={actions} />
       )}
-      {(s.view === 'months' || s.view === 'hist') && <ComingSoon view={s.view} />}
+      {s.view === 'months' && <Futuros s={s} actions={actions} />}
+      {s.view === 'hist' && <Historicos s={s} actions={actions} />}
+
+      {s.configOpen && <Config s={s} actions={actions} />}
     </div>
   )
 }
@@ -393,13 +398,3 @@ function LedgerView({ s, g, c, bannerLabel, balancePre, balanceAmount, balancePo
   )
 }
 
-function ComingSoon({ view }) {
-  const txt = view === 'months' ? { e: '🗓️', t: 'Gastos futuros', s: 'Cuotas y gastos fijos por venir. Próximamente.' } : { e: '📊', t: 'Gastos históricos', s: 'Gráfico por mes y desglose por medio de pago. Próximamente.' }
-  return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px 24px', background: '#F4F6FA' }}>
-      <div style={{ fontSize: 34, marginBottom: 10 }}>{txt.e}</div>
-      <div style={{ fontSize: 15, fontWeight: 800, color: '#64748B', marginBottom: 4 }}>{txt.t}</div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#B6BFCC', maxWidth: 240 }}>{txt.s}</div>
-    </div>
-  )
-}

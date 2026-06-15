@@ -2,6 +2,43 @@
  * Lógica de negocio de Cuentas Claras — funciones puras portadas del prototipo.
  * Todas reciben `state` como primer argumento (no mutan nada).
  */
+import { MONTH_ORDER, MONTH_SHORT } from './initialState'
+
+// Totales mensuales pasados (mock). BACKEND: traer de la DB.
+export const HISTORY_PAST = {
+  personal: {
+    '2026-01': { total: 9800, methods: { efectivo: 3000, mp: 2800, visa_macro: 4000 } },
+    '2026-02': { total: 14200, methods: { efectivo: 5200, mp: 4000, visa_macro: 5000 } },
+    '2026-03': { total: 25100, methods: { visa_santander: 12000, efectivo: 6100, mp: 7000 } },
+    '2026-04': { total: 18600, methods: { visa_macro: 10000, efectivo: 3600, mp: 5000 } },
+    '2026-05': { total: 22400, methods: { visa_macro: 12000, efectivo: 4400, mp: 6000 } },
+  },
+  pareja: { '2026-01': { total: 28000 }, '2026-02': { total: 33000 }, '2026-03': { total: 51000 }, '2026-04': { total: 38500 }, '2026-05': { total: 42000 } },
+  mamucha: { '2026-01': { total: 7000 }, '2026-02': { total: 8200 }, '2026-03': { total: 11000 }, '2026-04': { total: 9500 }, '2026-05': { total: 9000 } },
+  asado: { '2026-01': { total: 0 }, '2026-02': { total: 0 }, '2026-03': { total: 15000 }, '2026-04': { total: 21000 }, '2026-05': { total: 18000 } },
+}
+
+// Gastos futuros (cuotas + fijos) por grupo (mock).
+export function scheduled(gid) {
+  return {
+    pareja: [
+      { icon: '🛏️', title: 'Sommier', kind: 'cuota', cuotas: 6, startIdx: 0, perMonth: 24000, payerId: 'juan' },
+      { icon: '🏠', title: 'Expensas', kind: 'rec', perMonth: 38000, payerId: 'dani' },
+      { icon: '🎬', title: 'Netflix', kind: 'rec', perMonth: 4000, payerId: 'dani' },
+    ],
+    mamucha: [
+      { icon: '🛋️', title: 'Living nuevo', kind: 'cuota', cuotas: 3, startIdx: 0, perMonth: 30000, payerId: 'dani' },
+      { icon: '💊', title: 'Remedios', kind: 'rec', perMonth: 9000, payerId: 'paula' },
+    ],
+  }[gid] || []
+}
+
+const POOLS = {
+  personal: ['cafe', 'comida', 'super', 'transporte'],
+  pareja: ['super', 'nafta', 'comida', 'hogar'],
+  mamucha: ['farmacia', 'mandados', 'transporte', 'comida'],
+  asado: ['comida', 'super', 'cafe', 'transporte'],
+}
 
 // Formato de monto: "$4.500" / "-$1.200".
 export function fmt(n) {
@@ -117,6 +154,105 @@ export function resolveCat(state, gid, t) {
   const label = extractCat(state, gid, t)
   const name = label.charAt(0).toUpperCase() + label.slice(1)
   return { id: null, name, icon: guessIcon(label) }
+}
+
+// Serie mensual de un grupo (últimos 6); el mes actual usa el ledger real.
+export function buildHistory(state, gid) {
+  return MONTH_ORDER.map((key) => {
+    let total, methods
+    if (key === '2026-06') {
+      const led = state.ledgers[gid] || []
+      total = led.reduce((a, e) => a + e.amount, 0)
+      methods = {}
+      led.forEach((e) => {
+        const k = e.methodId || 'sin'
+        methods[k] = (methods[k] || 0) + e.amount
+      })
+    } else {
+      const d = (HISTORY_PAST[gid] || {})[key]
+      total = d ? d.total : 0
+      methods = d ? d.methods || {} : {}
+    }
+    return { key, label: MONTH_SHORT[key], total, methods, current: key === '2026-06' }
+  })
+}
+
+// Movimientos de un mes; meses pasados se sintetizan a partir del total.
+export function monthMovements(state, gid, key) {
+  const g = state.groups[gid]
+  if (key === '2026-06') {
+    return (state.ledgers[gid] || [])
+      .slice()
+      .reverse()
+      .map((e) => {
+        const cat = catById(state, e.categoryId)
+        const payer = memberById(state, gid, e.payerId)
+        const meth = state.methods.find((x) => x.id === e.methodId)
+        return {
+          catIcon: cat.icon, title: cat.name,
+          sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + e.dateFull : 'Pagó ' + payer.short + ' · ' + e.dateFull,
+          amountText: fmt(e.amount), avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
+          methodId: e.methodId || 'sin', _amt: e.amount,
+        }
+      })
+  }
+  const d = (HISTORY_PAST[gid] || {})[key]
+  const total = d ? d.total : 0
+  if (!total) return []
+  const pool = POOLS[gid] || state.categories.slice(0, 4).map((c) => c.id)
+  const weights = [0.4, 0.3, 0.2, 0.1]
+  const days = [27, 20, 13, 5]
+  const members = g.members
+  const methodKeys = d.methods ? Object.keys(d.methods).filter((k) => d.methods[k] > 0) : []
+  let acc = 0
+  return pool.map((cid, i) => {
+    const amt = i === pool.length - 1 ? total - acc : Math.round((total * weights[i]) / 100) * 100
+    acc += amt
+    const cat = catById(state, cid)
+    const payer = members[i % members.length]
+    const mk = methodKeys.length ? methodKeys[i % methodKeys.length] : null
+    const meth = mk && mk !== 'sin' ? state.methods.find((x) => x.id === mk) : null
+    const dateFull = days[i] + '/' + MONTH_SHORT[key].toLowerCase() + '/26'
+    return {
+      catIcon: cat.icon, title: cat.name,
+      sub: g.personal ? (meth ? meth.name : 'Efectivo') + ' · ' + dateFull : 'Pagó ' + payer.short + ' · ' + dateFull,
+      amountText: fmt(amt), avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
+      methodId: meth ? meth.id : mk === 'sin' ? 'sin' : 'efectivo', _amt: amt,
+    }
+  })
+}
+
+// Ajusta el % de un miembro (pasos de 5) y rebalancea al resto para sumar 100.
+export function adjustSplit(cur, id, delta) {
+  const ids = Object.keys(cur)
+  const v = Math.max(0, Math.min(100, Math.round((cur[id] + delta) / 5) * 5))
+  const others = ids.filter((x) => x !== id)
+  const remain = 100 - v
+  const othSum = others.reduce((a, x) => a + cur[x], 0)
+  const next = { ...cur, [id]: v }
+  if (others.length) {
+    if (othSum <= 0) {
+      const each = Math.round(remain / others.length / 5) * 5
+      let acc = 0
+      others.forEach((x, i) => { next[x] = i === others.length - 1 ? remain - acc : each; acc += each })
+    } else {
+      let acc = 0
+      others.forEach((x, i) => {
+        if (i === others.length - 1) next[x] = remain - acc
+        else { const val = Math.round((remain * cur[x]) / othSum); next[x] = val; acc += val }
+      })
+    }
+  }
+  return next
+}
+
+export function setEqualSplit(cur) {
+  const ids = Object.keys(cur)
+  const base = Math.floor(100 / ids.length)
+  const next = {}
+  let acc = 0
+  ids.forEach((x, i) => { next[x] = i === ids.length - 1 ? 100 - acc : base; acc += base })
+  return next
 }
 
 export function parseChat(state, gid, text) {

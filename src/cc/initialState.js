@@ -49,6 +49,14 @@ export function makeInitialState() {
     expandedMonths: { 0: true },
     histSel: {},
     newGroup: { name: '', desc: '', members: [], memberName: '', invited: false },
+    // config de grupo
+    addingMember: false,
+    newMemberName: '',
+    // perfil / medios de pago
+    profMethodEdit: null,
+    profMethodName: '',
+    addingProfMethod: false,
+    newProfMethodName: '',
 
     // ---- datos ----
     profile: { name: 'Dani', email: 'dani@cuentasclaras.app', gradient: 'linear-gradient(135deg,#7C3AED,#3B82F6)' },

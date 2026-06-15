@@ -1,0 +1,125 @@
+import { Back, Plus, Chevron, Archive, Trash } from './icons'
+import { BRAND_GRADIENT } from './initialState'
+
+const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
+const sectionLabel = { fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', marginBottom: 6 }
+
+/** Mi perfil: avatar, datos de cuenta, medios de pago, preferencias. */
+export default function Profile({ s, actions }) {
+  const prof = s.profile
+  const profInitial = (prof.name.trim()[0] || 'D').toUpperCase()
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#FBFCFE', animation: 'ccIn .26s ease' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 16px', borderBottom: '1px solid #EEF1F6' }}>
+        <div onClick={actions.backToList} style={{ width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Back size={20} /></div>
+        <span style={{ fontWeight: 800, fontSize: 18 }}>Mi perfil</span>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '22px 18px 24px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 20 }}>
+          <div onClick={actions.onChangeProfilePhoto} className="num" style={{ position: 'relative', width: 88, height: 88, borderRadius: '50%', background: prof.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 34, cursor: 'pointer' }}>
+            {profInitial}
+            <div style={{ position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderRadius: '50%', background: '#7C3AED', border: '3px solid #FBFCFE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#fff' }}>✎</div>
+          </div>
+          <div onClick={actions.onChangeProfilePhoto} style={{ fontSize: 12.5, fontWeight: 800, color: '#7C3AED', marginTop: 10, cursor: 'pointer' }}>Cambiar foto</div>
+        </div>
+
+        <div style={sectionLabel}>NOMBRE</div>
+        <input value={prof.name} onChange={(e) => actions.onProfName(e.target.value)} style={{ border: '1.5px solid #E7EAF1', borderRadius: 13, padding: '12px 14px', outline: 'none', fontWeight: 800, fontSize: 16, color: '#0B1220', width: '100%', marginBottom: 18, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+
+        <div style={sectionLabel}>CUENTA</div>
+        <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, overflow: 'hidden', marginBottom: 18, boxShadow: cardShadow }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', borderBottom: '1px solid #F1F4F9' }}>
+            <span style={{ fontSize: 16 }}>✉️</span>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Email</div><div style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{prof.email}</div></div>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#0E9F86', background: '#EAF8F3', padding: '3px 8px', borderRadius: 999 }}>Verificado</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px' }}>
+            <span style={{ fontSize: 16 }}>👤</span>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Usuario</div><div style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>@dani</div></div>
+          </div>
+        </div>
+
+        <div style={sectionLabel}>MEDIOS DE PAGO</div>
+        <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, overflow: 'hidden', marginBottom: 18, boxShadow: cardShadow }}>
+          {s.methods.map((m) => (
+            <div key={m.id} onClick={() => actions.openProfMethod(m.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid #F1F4F9', cursor: 'pointer' }}>
+              <div style={{ width: 30, height: 30, borderRadius: 8, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>{m.icon}</div>
+              <span style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{m.name}</span>
+              {m.archived && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#94A3B8', background: '#F1F4F9', padding: '3px 7px', borderRadius: 999 }}>ARCHIVADO</span>}
+              <span style={{ flex: 1 }} />
+              <Chevron size={17} color="#C3CCDA" />
+            </div>
+          ))}
+          {s.addingProfMethod ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px' }}>
+              <input value={s.newProfMethodName} onChange={(e) => actions.onNewProfMethodName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && actions.onConfirmProfMethod()} placeholder="Ej: Visa Galicia crédito" style={{ flex: 1, border: '1.5px solid #E2E8F0', borderRadius: 10, padding: '9px 11px', outline: 'none', fontWeight: 700, fontSize: 13.5, color: '#0B1220', width: '100%', fontFamily: 'inherit' }} />
+              <button onClick={actions.onConfirmProfMethod} style={{ border: 'none', background: '#7C3AED', color: '#fff', borderRadius: 10, padding: '9px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}>Añadir</button>
+            </div>
+          ) : (
+            <div onClick={actions.onAddProfMethod} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', color: '#7C3AED', cursor: 'pointer' }}>
+              <Plus size={17} color="#7C3AED" /><span style={{ fontWeight: 800, fontSize: 13.5 }}>Agregar medio de pago</span>
+            </div>
+          )}
+        </div>
+
+        <div style={sectionLabel}>PREFERENCIAS</div>
+        <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, overflow: 'hidden', marginBottom: 22, boxShadow: cardShadow }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px' }}>
+            <span style={{ fontSize: 16 }}>🔔</span>
+            <div style={{ flex: 1, fontWeight: 700, fontSize: 14, color: '#0B1220' }}>Notificaciones</div>
+            <div style={{ width: 42, height: 24, borderRadius: 999, background: '#7C3AED', position: 'relative' }}><div style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff' }} /></div>
+          </div>
+        </div>
+
+        <div onClick={actions.backToList} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 13, padding: 13, cursor: 'pointer' }}>
+          <span style={{ fontWeight: 800, fontSize: 14, color: '#E11D5B' }}>Cerrar sesión</span>
+        </div>
+      </div>
+
+      {s.profMethodEdit != null && <MethodEditSheet s={s} actions={actions} />}
+    </div>
+  )
+}
+
+/** Hoja para renombrar / archivar / eliminar un medio de pago. */
+function MethodEditSheet({ s, actions }) {
+  const meth = s.methods.find((x) => x.id === s.profMethodEdit)
+  if (!meth) return null
+  const count = (s.ledgers.personal || []).filter((e) => (e.methodId || null) === meth.id).length
+  const countText = count + (count === 1 ? ' gasto asociado' : ' gastos asociados')
+  return (
+    <>
+      <div onClick={actions.closeProfMethod} style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,.45)', animation: 'ccFade .2s ease', zIndex: 20 }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: '#fff', borderRadius: '28px 28px 0 0', padding: '10px 22px 26px', zIndex: 21, animation: 'ccUp .3s cubic-bezier(.22,1,.36,1)', boxShadow: '0 -20px 50px -20px rgba(15,23,42,.4)' }}>
+        <div style={{ width: 40, height: 5, borderRadius: 999, background: '#E2E8F0', margin: '6px auto 16px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{meth.icon}</div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: '#0B1220' }}>Medio de pago</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.04em', marginBottom: 7 }}>NOMBRE</div>
+        <input value={s.profMethodName} onChange={(e) => actions.onProfMethodName(e.target.value)} style={{ border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '11px 13px', outline: 'none', fontWeight: 800, fontSize: 15, color: '#0B1220', width: '100%', marginBottom: 14, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+
+        <div onClick={actions.toggleArchiveProfMethod} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', border: '1.5px solid #E2E8F0', borderRadius: 13, marginBottom: 10, cursor: 'pointer' }}>
+          <Archive size={18} color="#475569" /><span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: '#0B1220' }}>{meth.archived ? 'Desarchivar medio' : 'Archivar medio'}</span>
+        </div>
+
+        {count > 0 ? (
+          <div style={{ background: '#FEF8EF', border: '1px solid #FBE4C2', borderRadius: 13, padding: '12px 13px', marginBottom: 10 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#B45309', lineHeight: 1.4, marginBottom: 10 }}>Tiene {countText}. No se puede eliminar — archivalo, o eliminá primero sus gastos.</div>
+            <button onClick={actions.deleteMethodExpenses} style={{ width: '100%', border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 11, padding: 11, fontFamily: 'inherit', fontWeight: 800, fontSize: 13, color: '#E11D5B', cursor: 'pointer' }}>Eliminar gastos asociados</button>
+          </div>
+        ) : (
+          <div onClick={actions.deleteProfMethod} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 13, padding: 12, cursor: 'pointer', marginBottom: 10 }}>
+            <Trash size={17} /><span style={{ fontWeight: 800, fontSize: 14, color: '#E11D5B' }}>Eliminar medio de pago</span>
+          </div>
+        )}
+
+        <button onClick={actions.saveProfMethod} style={{ width: '100%', border: 'none', background: BRAND_GRADIENT, borderRadius: 13, padding: 13, fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#fff', cursor: 'pointer', boxShadow: '0 8px 20px -8px rgba(59,130,246,.6)' }}>Guardar</button>
+      </div>
+    </>
+  )
+}
