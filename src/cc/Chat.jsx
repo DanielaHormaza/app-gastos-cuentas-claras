@@ -4,6 +4,7 @@ import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
 import { Futuros, Historicos } from './GroupViews'
 import Config from './Config'
+import SettleSheet from './SettleSheet'
 import { dayLabel, fmtDateFull } from './dates'
 
 const card = { background: '#fff', border: '1px solid #EAEEF4', boxShadow: '0 6px 18px -12px rgba(15,23,42,.35)' }
@@ -43,6 +44,8 @@ export default function Chat({ s, actions }) {
       {s.view === 'chat' && (
         <ChatView s={s} g={g} c={c} bannerLabel={bannerLabel} lines={lines} inputHint={inputHint} readOnly={readOnly} actions={actions} />
       )}
+
+      {s.settleOpen && !g.personal && <SettleSheet s={s} actions={actions} />}
       {s.view === 'ledger' && (
         <LedgerView s={s} g={g} c={c} bannerLabel={g.personal ? 'Gastado' : 'Saldo en el grupo'} lines={lines} actions={actions} />
       )}
@@ -83,6 +86,7 @@ function ViewMenu({ s, actions }) {
 function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions }) {
   const gid = g.id
   const scrollRef = useRef(null)
+  const taRef = useRef(null)
   const thread = s.threads[gid] || []
   const lastE = (s.ledgers[gid] || []).slice(-1)[0]
 
@@ -90,6 +94,12 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions })
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [thread.length, gid])
+
+  // textarea que crece con el contenido (y vuelve a 1 línea al limpiar)
+  useEffect(() => {
+    const el = taRef.current
+    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px' }
+  }, [s.chatInput])
 
   const mkExp = (ex) => {
     const cat = ex.categoryId ? catById(s, ex.categoryId) : { icon: ex.catIcon || '🏷️', name: ex.catName || 'Gasto' }
@@ -106,11 +116,16 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions })
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* banner de saldo */}
       <div style={{ margin: '14px 16px 4px', borderRadius: 18, padding: '14px 18px', background: 'linear-gradient(135deg,rgba(46,204,177,.13),rgba(124,58,237,.13))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>{bannerLabel}</div>
           <BalanceLines lines={lines} size={16} />
         </div>
-        <button onClick={() => actions.goView('ledger')} style={{ border: 'none', background: '#fff', borderRadius: 999, padding: '9px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 12.5, color: '#7C3AED', boxShadow: '0 2px 8px -2px rgba(124,58,237,.3)', cursor: 'pointer', flexShrink: 0 }}>Ver detalle</button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+          <button onClick={() => actions.goView('ledger')} style={{ border: 'none', background: '#fff', borderRadius: 999, padding: '8px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 12.5, color: '#7C3AED', boxShadow: '0 2px 8px -2px rgba(124,58,237,.3)', cursor: 'pointer' }}>Ver detalle</button>
+          {!g.personal && (
+            <button onClick={actions.openSettle} style={{ border: 'none', background: BRAND_GRADIENT, borderRadius: 999, padding: '8px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 12.5, color: '#fff', boxShadow: '0 6px 16px -8px rgba(59,130,246,.6)', cursor: 'pointer' }}>Saldar</button>
+          )}
+        </div>
       </div>
 
       {/* hilo */}
@@ -130,13 +145,15 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions })
           <span style={{ fontSize: 12.5, fontWeight: 700, color: '#94A3B8' }}>Grupo archivado · solo lectura</span>
         </div>
       ) : (
-        <div style={{ padding: '10px 14px 20px', background: '#fff', display: 'flex', alignItems: 'center', gap: 9 }}>
-          <input
+        <div style={{ padding: '10px 14px 20px', background: '#fff', display: 'flex', alignItems: 'flex-end', gap: 9 }}>
+          <textarea
+            ref={taRef}
             value={s.chatInput}
             onChange={(e) => actions.onChatInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && actions.sendChat()}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); actions.sendChat() } }}
             placeholder={inputHint}
-            style={{ flex: 1, background: '#F4F6FA', border: 'none', outline: 'none', borderRadius: 999, padding: '13px 16px', fontSize: 14, color: '#0B1220', fontWeight: 600, fontFamily: 'inherit' }}
+            rows={1}
+            style={{ flex: 1, background: '#F4F6FA', border: 'none', outline: 'none', borderRadius: 22, padding: '13px 16px', fontSize: 14, color: '#0B1220', fontWeight: 600, fontFamily: 'inherit', resize: 'none', maxHeight: 120, lineHeight: 1.35 }}
           />
           <button onClick={actions.sendChat} style={{ width: 46, height: 46, border: 'none', borderRadius: '50%', background: BRAND_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 6px 16px -6px rgba(59,130,246,.6)', cursor: 'pointer' }}><Send /></button>
         </div>

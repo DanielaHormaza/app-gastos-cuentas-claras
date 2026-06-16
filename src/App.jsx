@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
-import { parseChat, guessIcon, adjustSplit, setEqualSplit } from './cc/logic'
+import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById } from './cc/logic'
 import { todayISO, nowTime } from './cc/dates'
 import Inicio from './cc/Inicio'
 import Chat from './cc/Chat'
@@ -76,24 +76,50 @@ export default function App() {
     openConfig: () => set((prev) => (prev.groupId === 'personal' ? { screen: 'profile', menuOpen: false } : { configOpen: true, menuOpen: false })),
     closeConfig: () => set({ configOpen: false }),
 
+    // ---- saldar (registrar pagos entre personas) ----
+    openSettle: () => set({ settleOpen: true }),
+    closeSettle: () => set({ settleOpen: false }),
+    settle: (list) =>
+      set((prev) => {
+        const g = prev.groupId
+        const valid = list.filter((p) => p.amount > 0)
+        if (!valid.length) return { settleOpen: false }
+        const pays = [...(prev.payments[g] || []), ...valid]
+        const tm = nowTime()
+        const msgs = valid.map((p, i) => {
+          const cur = p.currency || 'ARS'
+          const txt = p.to === 'dani'
+            ? memberById(prev, g, p.from).short + ' te pagó ' + fmt(p.amount, cur) + '.'
+            : 'Le pagaste ' + fmt(p.amount, cur) + ' a ' + memberById(prev, g, p.to).short + '.'
+          return { id: 'pay' + (Date.now() + i), role: 'app', kind: 'text', text: '✅ Registré el pago: ' + txt, time: tm }
+        })
+        return { payments: { ...prev.payments, [g]: pays }, threads: { ...prev.threads, [g]: [...(prev.threads[g] || []), ...msgs] }, settleOpen: false }
+      }),
+
     // ---- chat ----
     onChatInput: (v) => set({ chatInput: v }),
     sendChat: () => {
       if (s.archived[gid]) return
-      const text = (s.chatInput || '').trim()
-      if (!text) return
-      const b = Date.now()
+      // varias líneas = varios gastos (uno por línea)
+      const lines = (s.chatInput || '').split('\n').map((l) => l.trim()).filter(Boolean)
+      if (!lines.length) return
       const tm = nowTime()
-      const user = { id: 'u' + b, role: 'user', kind: 'user', text, time: tm }
-      const res = parseChat(s, gid, text)
-      let app
-      if (res.kind === 'payment') app = { id: 'a' + b, role: 'app', kind: 'payment', exp: res.exp }
-      else if (res.kind === 'ambiguous') app = { id: 'a' + b, role: 'app', kind: 'ambiguous', exp: res.exp }
-      else if (res.kind === 'interpret') app = { id: 'a' + b, role: 'app', kind: 'interpret', exp: res.exp }
-      else if (res.kind === 'correction') app = { id: 'a' + b, role: 'app', kind: 'correction', cor: res.cor }
-      else app = { id: 'a' + b, role: 'app', kind: 'text', text: 'No te entendí del todo 🤔. Probá algo como “8000 nafta pagó Juan”.' }
-      app.time = tm
-      set((prev) => ({ threads: { ...prev.threads, [gid]: [...(prev.threads[gid] || []), user, app] }, chatInput: '' }))
+      const base = Date.now()
+      const msgs = []
+      lines.forEach((line, i) => {
+        const id = base + i
+        msgs.push({ id: 'u' + id, role: 'user', kind: 'user', text: line, time: tm })
+        const res = parseChat(s, gid, line)
+        let app
+        if (res.kind === 'payment') app = { id: 'a' + id, role: 'app', kind: 'payment', exp: res.exp }
+        else if (res.kind === 'ambiguous') app = { id: 'a' + id, role: 'app', kind: 'ambiguous', exp: res.exp }
+        else if (res.kind === 'interpret') app = { id: 'a' + id, role: 'app', kind: 'interpret', exp: res.exp }
+        else if (res.kind === 'correction') app = { id: 'a' + id, role: 'app', kind: 'correction', cor: res.cor }
+        else app = { id: 'a' + id, role: 'app', kind: 'text', text: 'No te entendí del todo 🤔. Probá algo como “8000 nafta pagó Juan”.' }
+        app.time = tm
+        msgs.push(app)
+      })
+      set((prev) => ({ threads: { ...prev.threads, [gid]: [...(prev.threads[gid] || []), ...msgs] }, chatInput: '' }))
     },
 
     confirmExp: (id) =>

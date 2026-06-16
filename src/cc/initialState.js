@@ -30,6 +30,7 @@ export function makeInitialState() {
     view: 'chat', // chat | ledger | months | hist
     menuOpen: false,
     configOpen: false,
+    settleOpen: false,
     // ---- edición de gasto ----
     editId: null,
     draft: null,
