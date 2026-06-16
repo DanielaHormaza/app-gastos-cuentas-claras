@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, impactOf } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
 import { Futuros, Historicos } from './GroupViews'
@@ -372,17 +372,15 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
       if (!byDay[key]) { byDay[key] = []; order.push(key) }
       const cat = catById(s, e.categoryId)
       const payer = memberById(s, gid, e.payerId)
-      const mine = e.payerId === 'dani'
       const cur = e.currency || 'ARS'
-      const share = e.mode === 'settled' ? null : e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : c.daniPct / 100
-      const owed = share === null ? 0 : mine ? e.amount * (1 - share) : e.amount * share
       const meth = s.methods.find((x) => x.id === e.methodId)
+      const imp = impactOf(s, gid, e, c.daniPct)
       byDay[key].push({
         entry: e, avatarColor: payer.color, avatarInitial: payer.initial, catIcon: cat.icon, title: e.desc || cat.name,
         sub: g.personal ? (meth ? meth.name : 'Sin medio') + (e.time ? ' · ' + e.time : '') : 'Pagó ' + payer.short + (e.time ? ' · ' + e.time : ''),
         amountText: fmt(e.amount, cur),
-        implText: g.personal ? '' : share === null ? 'saldado' : owed <= 0 ? '—' : (mine ? '+' : '−') + fmt(owed, cur),
-        implColor: g.personal ? '#94A3B8' : share === null ? '#94A3B8' : mine ? '#0E9F86' : '#E11D5B',
+        implText: imp.text,
+        implColor: imp.color,
       })
     })
 

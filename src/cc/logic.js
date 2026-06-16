@@ -199,6 +199,88 @@ export function monthMovements(state, gid, key) {
     })
 }
 
+// Impacto de un gasto en tu saldo, en palabras + color.
+//  - pagaste vos y te deben      → "te deben $X" (verde)
+//  - pagaste vos el total ajeno  → "prestaste $X" (verde)
+//  - pagó el otro, te toca parte → "tu parte $X" (rojo)
+//  - saldado / sin deuda         → gris
+export function impactOf(state, gid, e, daniPct) {
+  const g = state.groups[gid]
+  const cur = e.currency || 'ARS'
+  if (g.personal) return { text: '', color: '#94A3B8' }
+  if (e.mode === 'settled') return { text: 'saldado', color: '#94A3B8' }
+  const share = expShare(e, daniPct)
+  if (e.payerId === 'dani') {
+    const owed = e.amount * (1 - share)
+    if (owed <= 0) return { text: 'sin deuda', color: '#94A3B8' }
+    return { text: (e.mode === 'full_theirs' ? 'prestaste ' : 'te deben ') + fmt(owed, cur), color: '#0E9F86' }
+  }
+  const owe = e.amount * share
+  if (owe <= 0) return { text: 'no participaste', color: '#94A3B8' }
+  return { text: 'tu parte ' + fmt(owe, cur), color: '#E11D5B' }
+}
+
+// Detalle de un mes para el desplegable de históricos: totales y "tu parte"
+// por moneda + items (último agregado primero).
+export function monthData(state, gid, key) {
+  const daniPct = (state.splits[gid] || {}).dani || 0
+  const g = state.groups[gid]
+  const rows = (state.ledgers[gid] || [])
+    .map((e, idx) => ({ e, idx }))
+    .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key)
+    .sort((a, b) => (a.e.date < b.e.date ? 1 : a.e.date > b.e.date ? -1 : b.idx - a.idx))
+  const totals = {}
+  const tuParte = {}
+  const items = rows.map(({ e }) => {
+    const cur = e.currency || 'ARS'
+    totals[cur] = (totals[cur] || 0) + e.amount
+    const consumo = e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : daniPct / 100
+    tuParte[cur] = (tuParte[cur] || 0) + e.amount * consumo
+    const cat = catById(state, e.categoryId)
+    const payer = memberById(state, gid, e.payerId)
+    const meth = state.methods.find((x) => x.id === e.methodId)
+    const imp = impactOf(state, gid, e, daniPct)
+    return {
+      id: e.id, entry: e, catIcon: cat.icon, title: e.desc || cat.name,
+      sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + fmtDateFull(e.date) : 'Pagó ' + payer.short + ' · ' + fmtDateFull(e.date),
+      avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
+      amountText: fmt(e.amount, cur), impText: imp.text, impColor: imp.color,
+    }
+  })
+  return { totals, tuParte, items }
+}
+
+// Meses con movimientos (sin futuros), del más nuevo al más viejo.
+export function ledgerMonths(state, gid) {
+  const set = new Set()
+  ;(state.ledgers[gid] || []).forEach((e) => { if (!e.future) set.add(monthKeyOf(e.date)) })
+  return [...set].sort().reverse()
+}
+
+// CSV de movimientos en un rango de meses (para abrir en Sheets/Excel).
+export function buildCsv(state, gid, fromKey, toKey) {
+  const daniPct = (state.splits[gid] || {}).dani || 0
+  const other = state.groups[gid].members.find((m) => m.id !== 'dani') || { short: 'Otro' }
+  const rows = (state.ledgers[gid] || [])
+    .filter((e) => !e.future)
+    .filter((e) => { const k = monthKeyOf(e.date); return (!fromKey || k >= fromKey) && (!toKey || k <= toKey) })
+    .slice()
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  const head = ['Fecha', 'Mes', 'Descripción', 'Categoría', 'Monto', 'Moneda', 'Pagó', 'División', 'Tu parte', 'Impacto']
+  const esc = (s) => { s = String(s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s }
+  const lines = [head.join(',')]
+  rows.forEach((e) => {
+    const cat = catById(state, e.categoryId)
+    const payer = memberById(state, gid, e.payerId)
+    const consumo = e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : daniPct / 100
+    const tuParte = Math.round(e.amount * consumo * 100) / 100
+    const divLabel = e.mode === 'settled' ? 'Pagaron ambos' : e.mode === 'full_mine' ? 'Todo Dani' : e.mode === 'full_theirs' ? 'Todo ' + other.short : 'Dani ' + daniPct + '% / ' + other.short + ' ' + (100 - daniPct) + '%'
+    const imp = impactOf(state, gid, e, daniPct)
+    lines.push([fmtDateFull(e.date), monthKeyOf(e.date), e.desc || cat.name, cat.name, e.amount, e.currency || 'ARS', payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
+  })
+  return '﻿' + lines.join('\n') // BOM para que Excel respete acentos
+}
+
 // Ajusta el % de un miembro (pasos de 5) y rebalancea al resto para sumar 100.
 export function adjustSplit(cur, id, delta) {
   const ids = Object.keys(cur)
