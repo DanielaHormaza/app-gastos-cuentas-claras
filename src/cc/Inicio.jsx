@@ -17,6 +17,10 @@ export default function Inicio({ s, actions }) {
   const prof = s.profile
   const profInitial = (prof.name.trim()[0] || 'D').toUpperCase()
 
+  // Grupo seleccionado (para resaltar en el panel izquierdo del desktop).
+  const sel = s.screen === 'chat' ? s.groupId : null
+  const ring = '0 0 0 2px #C9B8F6'
+
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#FBFCFE', animation: 'ccInL .26s ease' }}>
       {/* header */}
@@ -46,7 +50,7 @@ export default function Inicio({ s, actions }) {
         {/* Mis gastos */}
         <div
           onClick={actions.openPersonal}
-          style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 14px', borderRadius: 18, background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', cursor: 'pointer' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 14px', borderRadius: 18, background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', cursor: 'pointer', boxShadow: sel === 'personal' ? ring : 'none' }}
         >
           <div style={{ width: 46, height: 46, borderRadius: 14, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 21, flexShrink: 0, boxShadow: '0 2px 8px -4px rgba(15,23,42,.3)' }}>🧾</div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -75,7 +79,7 @@ export default function Inicio({ s, actions }) {
               <div
                 key={id}
                 onClick={() => actions.openGroup(id)}
-                style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '14px 12px', borderRadius: 18, background: '#fff', boxShadow: '0 1px 0 #EEF1F6', cursor: 'pointer' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '14px 12px', borderRadius: 18, background: sel === id ? '#F6F3FE' : '#fff', boxShadow: sel === id ? ring : '0 1px 0 #EEF1F6', cursor: 'pointer' }}
               >
                 <div style={{ width: 48, height: 48, borderRadius: 16, background: g.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 19, flexShrink: 0 }}>{g.initial}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>

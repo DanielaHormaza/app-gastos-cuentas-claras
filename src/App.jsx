@@ -8,6 +8,19 @@ import Profile from './cc/Profile'
 import Archived from './cc/Archived'
 import NewGroup from './cc/NewGroup'
 import { MethodDetail, MonthDetail } from './cc/Detail'
+import { Logo } from './cc/icons'
+
+// Layout de dos paneles a partir de ~900px de ancho.
+function useDesktop() {
+  const [d, setD] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 900px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 900px)')
+    const h = (e) => setD(e.matches)
+    mq.addEventListener('change', h)
+    return () => mq.removeEventListener('change', h)
+  }, [])
+  return d
+}
 
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
 const KEY = 'cuentas-claras:v1'
@@ -25,6 +38,7 @@ function load() {
 
 export default function App() {
   const [s, setS] = useState(load)
+  const desktop = useDesktop()
 
   // Persiste solo los datos (no el estado de navegación transitorio).
   useEffect(() => {
@@ -316,18 +330,49 @@ export default function App() {
       }),
   }
 
+  // Pantalla activa (todo lo que no es la lista) + overlay de edición.
+  const screenEl = (
+    <>
+      {s.screen === 'chat' && <Chat s={s} actions={actions} />}
+      {s.screen === 'profile' && <Profile s={s} actions={actions} />}
+      {s.screen === 'archived' && <Archived s={s} actions={actions} />}
+      {s.screen === 'newgroup' && <NewGroup s={s} actions={actions} />}
+      {s.screen === 'methodDetail' && <MethodDetail s={s} actions={actions} />}
+      {s.screen === 'monthDetail' && <MonthDetail s={s} actions={actions} />}
+      {s.editId != null && <EditSheet s={s} actions={actions} />}
+    </>
+  )
+
+  if (desktop) {
+    return (
+      <div style={{ height: '100dvh', display: 'flex', background: '#e6e9f2' }}>
+        <aside style={{ position: 'relative', width: 400, flexShrink: 0, overflow: 'hidden', background: '#FBFCFE', borderRight: '1px solid #E2E8F0' }}>
+          <Inicio s={s} actions={actions} />
+        </aside>
+        <main style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden', background: s.screen === 'list' ? '#F4F6FA' : '#FBFCFE' }}>
+          {s.screen === 'list' ? <EmptyState /> : screenEl}
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100dvh', display: 'flex', justifyContent: 'center', background: '#e6e9f2' }}>
       <div style={{ position: 'relative', width: '100%', maxWidth: 460, minHeight: '100dvh', background: '#FBFCFE', overflow: 'hidden' }}>
-        {s.screen === 'list' && <Inicio s={s} actions={actions} />}
-        {s.screen === 'chat' && <Chat s={s} actions={actions} />}
-        {s.screen === 'profile' && <Profile s={s} actions={actions} />}
-        {s.screen === 'archived' && <Archived s={s} actions={actions} />}
-        {s.screen === 'newgroup' && <NewGroup s={s} actions={actions} />}
-        {s.screen === 'methodDetail' && <MethodDetail s={s} actions={actions} />}
-        {s.screen === 'monthDetail' && <MonthDetail s={s} actions={actions} />}
+        {s.screen === 'list' ? <Inicio s={s} actions={actions} /> : screenEl}
+      </div>
+    </div>
+  )
+}
 
-        {s.editId != null && <EditSheet s={s} actions={actions} />}
+/** Panel derecho vacío en desktop cuando no hay nada seleccionado. */
+function EmptyState() {
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 40, background: '#F4F6FA' }}>
+      <div style={{ opacity: 0.5, marginBottom: 18 }}><Logo size={56} /></div>
+      <div style={{ fontWeight: 800, fontSize: 18, color: '#475569', marginBottom: 6 }}>Elegí un grupo o tus gastos</div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#94A3B8', maxWidth: 300, lineHeight: 1.5 }}>
+        Tocá <span style={{ color: '#7C3AED', fontWeight: 800 }}>Mis gastos</span> o cualquier grupo de la izquierda para abrir su chat y empezar a cargar gastos.
       </div>
     </div>
   )
