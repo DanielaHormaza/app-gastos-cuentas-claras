@@ -1,7 +1,7 @@
 import { Back } from './icons'
 import { fmt, catById, buildHistory, monthData, monthLongLabel, groupCategories, CURRENCIES } from './logic'
 import { fmtDateFull } from './dates'
-import CategoryFilter from './CategoryFilter'
+import { Filters } from './CategoryFilter'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
 
@@ -61,7 +61,7 @@ export function MonthDetail({ s, actions }) {
   const g = s.groups[gid]
   const key = s.monthKey || '2026-06'
   const cats = groupCategories(s, gid)
-  const { totals, tuParte, transfers, items } = monthData(s, gid, key, s.catFilter)
+  const { totals, tuParte, transfers, items } = monthData(s, gid, key, s.catFilter, s.moveQuery)
   const curs = CURRENCIES.filter((cu) => totals[cu])
   const trCurs = CURRENCIES.filter((cu) => transfers[cu])
 
@@ -69,7 +69,7 @@ export function MonthDetail({ s, actions }) {
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#F4F6FA', animation: 'ccIn .26s ease' }}>
       <Header title={monthLongLabel(key)} onBack={actions.backToHist} />
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {cats.length > 0 && <CategoryFilter value={s.catFilter} cats={cats} onChange={actions.setCatFilter} />}
+        <Filters cats={cats} catFilter={s.catFilter} onCat={actions.setCatFilter} query={s.moveQuery} onQuery={actions.setMoveQuery} />
 
         <div style={{ borderRadius: 16, padding: '14px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
@@ -98,7 +98,7 @@ export function MonthDetail({ s, actions }) {
         {items.length === 0 && (
           <div style={{ textAlign: 'center', padding: '30px 16px', color: '#B6BFCC' }}>
             <div style={{ fontSize: 30, marginBottom: 8 }}>🧾</div>
-            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Sin movimientos{s.catFilter.length ? ' de esa categoría' : ''} en este mes.</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Sin movimientos{s.catFilter.length || s.moveQuery ? ' que coincidan' : ''} en este mes.</div>
           </div>
         )}
       </div>

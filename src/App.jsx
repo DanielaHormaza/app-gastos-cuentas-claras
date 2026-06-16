@@ -55,7 +55,7 @@ export default function App() {
 
   // Abre la hoja de edición para un gasto del ledger.
   const openEdit = (e) =>
-    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS' }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
+    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS', createdBy: e.createdBy, editedBy: e.editedBy, editedAt: e.editedAt }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
 
   const actions = {
     // ---- navegación ----
@@ -86,7 +86,7 @@ export default function App() {
         if (!valid.length) return { settleOpen: false }
         const tm = nowTime()
         const base = Date.now()
-        const entries = valid.map((p, i) => ({ id: 'tr' + (base + i), date: todayISO(), time: tm, kind: 'transfer', categoryId: 'transfer', from: p.from, to: p.to, amount: p.amount, currency: p.currency || 'ARS' }))
+        const entries = valid.map((p, i) => ({ id: 'tr' + (base + i), date: todayISO(), time: tm, kind: 'transfer', categoryId: 'transfer', from: p.from, to: p.to, amount: p.amount, currency: p.currency || 'ARS', createdBy: prev.profile.name }))
         const msgs = valid.map((p, i) => {
           const cur = p.currency || 'ARS'
           const txt = p.to === 'dani'
@@ -107,9 +107,10 @@ export default function App() {
       const tm = nowTime()
       const base = Date.now()
       const msgs = []
+      const day = todayISO()
       lines.forEach((line, i) => {
         const id = base + i
-        msgs.push({ id: 'u' + id, role: 'user', kind: 'user', text: line, time: tm })
+        msgs.push({ id: 'u' + id, role: 'user', kind: 'user', text: line, time: tm, date: day, by: s.profile.name })
         const res = parseChat(s, gid, line)
         let app
         if (res.kind === 'payment') app = { id: 'a' + id, role: 'app', kind: 'payment', exp: res.exp }
@@ -118,6 +119,7 @@ export default function App() {
         else if (res.kind === 'correction') app = { id: 'a' + id, role: 'app', kind: 'correction', cor: res.cor }
         else app = { id: 'a' + id, role: 'app', kind: 'text', text: 'No te entendí del todo 🤔. Probá algo como “8000 nafta pagó Juan”.' }
         app.time = tm
+        app.date = day
         msgs.push(app)
       })
       set((prev) => ({ threads: { ...prev.threads, [gid]: [...(prev.threads[gid] || []), ...msgs] }, chatInput: '' }))
@@ -140,7 +142,7 @@ export default function App() {
           cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
         }
         const expId = 'e' + Date.now()
-        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS' }
+        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
         let splits = prev.splits
         if (exp.split) {
           const ids = Object.keys(prev.splits[g] || {})
@@ -239,7 +241,7 @@ export default function App() {
     onSave: () =>
       set((prev) => {
         const g = prev.groupId
-        const l = (prev.ledgers[g] || []).map((it) => (it.id === prev.editId ? { ...it, categoryId: prev.draft.categoryId, amount: prev.draft.amount, payerId: prev.draft.payerId, methodId: prev.draft.methodId !== undefined ? prev.draft.methodId : it.methodId || null, mode: prev.draft.mode || 'group', currency: prev.draft.currency || 'ARS' } : it))
+        const l = (prev.ledgers[g] || []).map((it) => (it.id === prev.editId ? { ...it, categoryId: prev.draft.categoryId, amount: prev.draft.amount, payerId: prev.draft.payerId, methodId: prev.draft.methodId !== undefined ? prev.draft.methodId : it.methodId || null, mode: prev.draft.mode || 'group', currency: prev.draft.currency || 'ARS', editedBy: prev.profile.name, editedAt: todayISO() } : it))
         return { ledgers: { ...prev.ledgers, [g]: l }, editId: null, draft: null, editPanel: null }
       }),
     onDelete: () =>
@@ -253,6 +255,7 @@ export default function App() {
     toggleMonth: (idx) => set((prev) => ({ expandedMonths: { ...prev.expandedMonths, [idx]: !prev.expandedMonths[idx] } })),
     setHistSel: (g, key) => set((prev) => ({ histSel: { ...prev.histSel, [g]: key } })),
     setCatFilter: (id) => set({ catFilter: id }),
+    setMoveQuery: (v) => set({ moveQuery: v }),
     openMethodDetail: (mid) => set({ screen: 'methodDetail', methodId: mid }),
     openMonthDetail: (key) => set({ screen: 'monthDetail', monthKey: key, monthFilter: null }),
     setMonthFilter: (id) => set({ monthFilter: id }),

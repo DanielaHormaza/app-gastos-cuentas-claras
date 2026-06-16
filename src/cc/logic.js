@@ -169,9 +169,9 @@ export function monthLongLabel(key) { return MES_LONG[Number(key.slice(5, 7)) - 
 
 // Serie mensual real (últimos 6 meses terminando en el mes actual).
 // El gráfico totaliza ARS (no se mezclan monedas). methods = desglose por medio.
-export function buildHistory(state, gid, catFilter = []) {
+export function buildHistory(state, gid, catFilter = [], q = '') {
   const showTransfer = catFilter && catFilter.length > 0 && catFilter.includes('transfer')
-  const led = (state.ledgers[gid] || []).filter((e) => !e.future && catMatch(catFilter, e) && (e.kind !== 'transfer' || showTransfer))
+  const led = (state.ledgers[gid] || []).filter((e) => !e.future && catMatch(catFilter, e) && textMatch(state, gid, e, q) && (e.kind !== 'transfer' || showTransfer))
   const cur = monthKeyOf(todayISO())
   const [y, m] = cur.split('-').map(Number)
   const keys = []
@@ -242,6 +242,16 @@ export function catMatch(catFilter, e) {
   return !catFilter || catFilter.length === 0 || catFilter.includes(e.categoryId)
 }
 
+// Texto buscable de un movimiento (descripción + categoría, o nombres en transferencias).
+export function entryName(state, gid, e) {
+  if (e.kind === 'transfer') return 'transferencia pago ' + memberById(state, gid, e.from).short + ' ' + memberById(state, gid, e.to).short
+  return (e.desc || '') + ' ' + catById(state, e.categoryId).name
+}
+export function textMatch(state, gid, e, q) {
+  if (!q) return true
+  return entryName(state, gid, e).toLowerCase().includes(q.toLowerCase())
+}
+
 // Fila de movimiento para mostrar (gasto o transferencia). withDate: usar fecha en el subtítulo.
 export function rowFor(state, gid, e, daniPct, opts = {}) {
   const g = state.groups[gid]
@@ -272,11 +282,11 @@ export function rowFor(state, gid, e, daniPct, opts = {}) {
 
 // Detalle de un mes: gastado y "tu parte" por moneda + transferencias + items.
 // catFilter = array de ids ([] = todas). Las transferencias no suman al gasto.
-export function monthData(state, gid, key, catFilter = []) {
+export function monthData(state, gid, key, catFilter = [], q = '') {
   const daniPct = (state.splits[gid] || {}).dani || 0
   const rows = (state.ledgers[gid] || [])
     .map((e, idx) => ({ e, idx }))
-    .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key && catMatch(catFilter, x.e))
+    .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key && catMatch(catFilter, x.e) && textMatch(state, gid, x.e, q))
     .sort((a, b) => (a.e.date < b.e.date ? 1 : a.e.date > b.e.date ? -1 : b.idx - a.idx))
   const totals = {}
   const tuParte = {}

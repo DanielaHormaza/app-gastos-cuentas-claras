@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, textMatch, groupCategories } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
 import { Futuros, Historicos } from './GroupViews'
+import { Filters } from './CategoryFilter'
 import Config from './Config'
 import SettleSheet from './SettleSheet'
-import { dayLabel, fmtDateFull } from './dates'
+import { dayLabel, fmtDateFull, todayISO } from './dates'
 
 const card = { background: '#fff', border: '1px solid #EAEEF4', boxShadow: '0 6px 18px -12px rgba(15,23,42,.35)' }
 const aiAvatar = { width: 28, height: 28, borderRadius: '50%', background: BRAND_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: 13, fontWeight: 800 }
@@ -132,9 +133,15 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions })
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 14px 12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>HOY</div>
-          {thread.map((m) => (
-            <Message key={m.id} m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} />
-          ))}
+          {thread.map((m) => {
+            const ts = m.time ? (m.date && m.date !== todayISO() ? fmtDateFull(m.date) + ' · ' + m.time : m.time) : ''
+            return (
+              <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.kind === 'user' ? 'flex-end' : 'flex-start' }}>
+                <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} />
+                {ts && <div style={{ fontSize: 9.5, fontWeight: 700, color: '#B6BFCC', padding: '3px 6px 0' }}>{m.by ? m.by + ' · ' : ''}{ts}</div>}
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -378,10 +385,11 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
   const arrow = g.personal ? '' : netArs > 1 ? '↑' : netArs < -1 ? '↓' : '='
   const arrowColor = netArs > 1 ? '#0E9F86' : netArs < -1 ? '#E11D5B' : '#94A3B8'
 
+  const cats = groupCategories(s, gid)
   const order = []
   const byDay = {}
   ;(s.ledgers[gid] || [])
-    .filter((e) => !e.future)
+    .filter((e) => !e.future && catMatch(s.catFilter, e) && textMatch(s, gid, e, s.moveQuery))
     .slice()
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     .forEach((e) => {
@@ -400,6 +408,8 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
         <div className="num" style={{ fontWeight: 700, fontSize: 22, color: arrowColor }}>{arrow}</div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+        <Filters cats={cats} catFilter={s.catFilter} onCat={actions.setCatFilter} query={s.moveQuery} onQuery={actions.setMoveQuery} />
+        {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '16px 0' }}>Sin movimientos que coincidan.</div>}
         {order.map((k) => (
           <div key={k} style={{ display: 'contents' }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '8px 4px 2px' }}>{k}</div>

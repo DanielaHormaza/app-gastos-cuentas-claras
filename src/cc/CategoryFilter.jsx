@@ -11,7 +11,7 @@ export default function CategoryFilter({ value = [], cats, onChange }) {
   const label = value.length === 0 ? 'Todas las categorías' : value.length === 1 ? (cats.find((c) => c.id === value[0]) || {}).name || '1 categoría' : value.length + ' categorías'
 
   return (
-    <div style={{ flexShrink: 0 }}>
+    <div style={{ flexShrink: 0, position: 'relative', zIndex: open ? 30 : 'auto' }}>
       <div onClick={() => setOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 9, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '10px 13px', cursor: 'pointer', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)' }}>
         <span style={{ fontSize: 16 }}>{value.length === 0 ? '🔎' : '🏷️'}</span>
         <span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: value.length ? '#0B1220' : '#64748B' }}>{label}</span>
@@ -19,8 +19,9 @@ export default function CategoryFilter({ value = [], cats, onChange }) {
         <span style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s', display: 'inline-flex' }}><ChevronDown size={16} color="#94A3B8" w={2.6} /></span>
       </div>
 
+      {open && <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />}
       {open && (
-        <div style={{ background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, marginTop: 6, boxShadow: '0 18px 44px -16px rgba(15,23,42,.45)', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 6, zIndex: 31, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, boxShadow: '0 18px 44px -16px rgba(15,23,42,.45)', overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F4F6FA', borderRadius: 11, padding: '9px 12px', margin: 10 }}>
             <Search />
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar categoría…" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontWeight: 700, fontSize: 13.5, color: '#0B1220', width: '100%', fontFamily: 'inherit' }} />
@@ -45,6 +46,20 @@ export default function CategoryFilter({ value = [], cats, onChange }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Barra de filtros: categorías (multi) + buscador por nombre de movimiento. */
+export function Filters({ cats, catFilter, onCat, query, onQuery }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+      {cats.length > 0 && <CategoryFilter value={catFilter} cats={cats} onChange={onCat} />}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '10px 13px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)' }}>
+        <Search />
+        <input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Buscar movimiento…" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontWeight: 700, fontSize: 14, color: '#0B1220', width: '100%', fontFamily: 'inherit' }} />
+        {query && <span onClick={() => onQuery('')} style={{ fontSize: 12, fontWeight: 800, color: '#7C3AED', cursor: 'pointer' }}>Limpiar</span>}
+      </div>
     </div>
   )
 }

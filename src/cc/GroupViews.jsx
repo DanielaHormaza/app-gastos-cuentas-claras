@@ -3,7 +3,7 @@ import { compute, fmt, buildHistory, catById, memberById, monthLongLabel, monthD
 import { monthKeyOf } from './dates'
 import { METHOD_COLORS } from './initialState'
 import { Chevron, ChevronDown } from './icons'
-import CategoryFilter from './CategoryFilter'
+import { Filters } from './CategoryFilter'
 
 function downloadCsv(text, name) {
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8' })
@@ -104,8 +104,9 @@ export function Historicos({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const catFilter = s.catFilter
+  const q = s.moveQuery
   const cats = groupCategories(s, gid)
-  const months = buildHistory(s, gid, catFilter)
+  const months = buildHistory(s, gid, catFilter, q)
   const histMax = Math.max(1, ...months.map((m) => m.total))
   const selKey = s.histSel[gid] || months[months.length - 1].key
   const sel = months.find((m) => m.key === selKey) || months[months.length - 1]
@@ -116,8 +117,8 @@ export function Historicos({ s, actions }) {
       {/* exportar */}
       {monthKeys.length > 0 && <ExportBar s={s} gid={gid} monthKeys={monthKeys} />}
 
-      {/* filtro por categoría (desplegable + buscador) */}
-      {cats.length > 0 && <CategoryFilter value={catFilter} cats={cats} onChange={actions.setCatFilter} />}
+      {/* filtros: categorías + buscador por nombre */}
+      <Filters cats={cats} catFilter={catFilter} onCat={actions.setCatFilter} query={q} onQuery={actions.setMoveQuery} />
 
       {/* bar chart (ARS) */}
       <div style={{ background: '#fff', borderRadius: 18, padding: '15px 16px', boxShadow: cardShadow }}>
@@ -145,8 +146,8 @@ export function Historicos({ s, actions }) {
 
       <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '4px 4px 0' }}>MOVIMIENTOS POR MES</div>
       {monthKeys.map((k) => {
-        const { totals, tuParte, transfers, items } = monthData(s, gid, k, catFilter)
-        if (catFilter.length && items.length === 0) return null
+        const { totals, tuParte, transfers, items } = monthData(s, gid, k, catFilter, q)
+        if ((catFilter.length || q) && items.length === 0) return null
         const spendCurs = CURRENCIES.filter((cu) => totals[cu])
         const trCurs = CURRENCIES.filter((cu) => transfers[cu])
         const mainCurs = spendCurs.length ? spendCurs : trCurs

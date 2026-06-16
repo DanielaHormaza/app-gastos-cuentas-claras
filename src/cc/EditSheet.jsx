@@ -95,6 +95,11 @@ function Fields({ s, g, dr, c, actions }) {
         <button onClick={actions.onDelete} style={{ width: 50, border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Trash /></button>
         <button onClick={actions.onSave} style={{ flex: 1, border: 'none', background: BRAND_GRADIENT, borderRadius: 13, padding: 13, fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#fff', cursor: 'pointer', boxShadow: '0 8px 20px -8px rgba(59,130,246,.6)' }}>Guardar cambios</button>
       </div>
+      {(dr.createdBy || dr.editedBy) && (
+        <div style={{ textAlign: 'center', fontSize: 11, color: '#B6BFCC', fontWeight: 700, marginTop: 12 }}>
+          {dr.createdBy ? 'Cargado por ' + dr.createdBy : ''}{dr.editedBy ? ' · editado por ' + dr.editedBy : ''}
+        </div>
+      )}
     </div>
   )
 }

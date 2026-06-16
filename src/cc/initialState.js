@@ -47,6 +47,7 @@ export function makeInitialState() {
     expandedMonths: { 0: true },
     histSel: {},
     catFilter: [], // categorías seleccionadas en el filtro ([] = todas)
+    moveQuery: '', // búsqueda por nombre de movimiento
     newGroup: { name: '', desc: '', members: [], memberName: '', invited: false },
     // config de grupo
     addingMember: false,
