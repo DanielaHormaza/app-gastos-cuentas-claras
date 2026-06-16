@@ -6,6 +6,7 @@
  * (profile, groups, group_members, splits, expenses, payments, threads,
  * categories, payment_methods). El parser de NL puede correr en cliente o server.
  */
+import { isoFromOffset } from './dates'
 
 // Paletas de marca (ver README · Design Tokens).
 export const PALETTE = ['#7C3AED', '#3B82F6', '#2ECCB1', '#F59E0B', '#EC4899', '#10B981']
@@ -144,27 +145,28 @@ export function makeInitialState() {
       personal: { dani: 100 },
     },
     ledgers: {
+      // Fechas de ejemplo relativas a hoy (Hoy/Ayer/…) para que la demo se vea coherente.
       pareja: [
-        { id: 'p1', day: 'Hoy', dateFull: '14/jun/26', categoryId: 'super', amount: 4500, payerId: 'dani', time: '14:20' },
-        { id: 'p2', day: 'Hoy', dateFull: '14/jun/26', categoryId: 'nafta', amount: 8000, payerId: 'juan', time: '10:05' },
-        { id: 'p3', day: 'Ayer', dateFull: '13/jun/26', categoryId: 'comida', amount: 6200, payerId: 'juan', time: '21:40' },
-        { id: 'p4', day: 'Ayer', dateFull: '13/jun/26', categoryId: 'cafe', amount: 2800, payerId: 'dani', time: '17:30' },
-        { id: 'p5', day: 'Mié', dateFull: '11/jun/26', categoryId: 'cine', amount: 9000, payerId: 'dani', time: '20:10' },
+        { id: 'p1', date: isoFromOffset(0), categoryId: 'super', amount: 4500, payerId: 'dani', time: '14:20' },
+        { id: 'p2', date: isoFromOffset(0), categoryId: 'nafta', amount: 8000, payerId: 'juan', time: '10:05' },
+        { id: 'p3', date: isoFromOffset(1), categoryId: 'comida', amount: 6200, payerId: 'juan', time: '21:40' },
+        { id: 'p4', date: isoFromOffset(1), categoryId: 'cafe', amount: 2800, payerId: 'dani', time: '17:30' },
+        { id: 'p5', date: isoFromOffset(3), categoryId: 'cine', amount: 9000, payerId: 'dani', time: '20:10' },
       ],
       mamucha: [
-        { id: 'm1', day: 'Hoy', dateFull: '14/jun/26', categoryId: 'farmacia', amount: 1800, payerId: 'dani', time: '12:00' },
-        { id: 'm2', day: 'Ayer', dateFull: '13/jun/26', categoryId: 'mandados', amount: 1200, payerId: 'paula', time: '18:15' },
-        { id: 'm3', day: 'Lun', dateFull: '9/jun/26', categoryId: 'transporte', amount: 3500, payerId: 'dani', time: '09:30' },
+        { id: 'm1', date: isoFromOffset(0), categoryId: 'farmacia', amount: 1800, payerId: 'dani', time: '12:00' },
+        { id: 'm2', date: isoFromOffset(1), categoryId: 'mandados', amount: 1200, payerId: 'paula', time: '18:15' },
+        { id: 'm3', date: isoFromOffset(5), categoryId: 'transporte', amount: 3500, payerId: 'dani', time: '09:30' },
       ],
       asado: [
-        { id: 'a1', day: 'Sáb', dateFull: '7/jun/26', categoryId: 'comida', amount: 18000, payerId: 'dani', time: '21:30' },
-        { id: 'a2', day: 'Sáb', dateFull: '7/jun/26', categoryId: 'super', amount: 9000, payerId: 'leo', time: '18:00' },
+        { id: 'a1', date: isoFromOffset(7), categoryId: 'comida', amount: 18000, payerId: 'dani', time: '21:30' },
+        { id: 'a2', date: isoFromOffset(7), categoryId: 'super', amount: 9000, payerId: 'leo', time: '18:00' },
       ],
       personal: [
-        { id: 'i1', day: 'Hoy', dateFull: '14/jun/26', categoryId: 'cafe', amount: 3200, payerId: 'dani', time: '09:10', methodId: 'efectivo' },
-        { id: 'i2', day: 'Ayer', dateFull: '13/jun/26', categoryId: 'transporte', amount: 1500, payerId: 'dani', time: '08:30', methodId: 'mp' },
-        { id: 'i3', day: 'Mar', dateFull: '10/jun/26', categoryId: 'super', amount: 8700, payerId: 'dani', time: '19:00', methodId: 'visa_macro' },
-        { id: 'i4', day: 'Jue', dateFull: '5/jun/26', categoryId: 'farmacia', amount: 2400, payerId: 'dani', time: '11:20', methodId: null },
+        { id: 'i1', date: isoFromOffset(0), categoryId: 'cafe', amount: 3200, payerId: 'dani', time: '09:10', methodId: 'efectivo' },
+        { id: 'i2', date: isoFromOffset(1), categoryId: 'transporte', amount: 1500, payerId: 'dani', time: '08:30', methodId: 'mp' },
+        { id: 'i3', date: isoFromOffset(4), categoryId: 'super', amount: 8700, payerId: 'dani', time: '19:00', methodId: 'visa_macro' },
+        { id: 'i4', date: isoFromOffset(9), categoryId: 'farmacia', amount: 2400, payerId: 'dani', time: '11:20', methodId: null },
       ],
     },
   }

@@ -3,6 +3,7 @@
  * Todas reciben `state` como primer argumento (no mutan nada).
  */
 import { MONTH_ORDER, MONTH_SHORT } from './initialState'
+import { fmtDateFull } from './dates'
 
 // Totales mensuales pasados (mock). BACKEND: traer de la DB.
 export const HISTORY_PAST = {
@@ -127,11 +128,6 @@ export function balancePhrase(state, gid) {
   return { pre: 'En contra: ', amount: fmt(-c.net), post: '', color: '#E11D5B' }
 }
 
-export function nowTime() {
-  const d = new Date()
-  return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2)
-}
-
 // ===== Parser de lenguaje natural =====
 const STOP = new Set([
   'pago', 'pagó', 'pague', 'pagué', 'yo', 'lo', 'la', 'los', 'las', 'me', 'nos', 'transfirio',
@@ -188,9 +184,10 @@ export function monthMovements(state, gid, key) {
         const cat = catById(state, e.categoryId)
         const payer = memberById(state, gid, e.payerId)
         const meth = state.methods.find((x) => x.id === e.methodId)
+        const df = fmtDateFull(e.date)
         return {
           catIcon: cat.icon, title: cat.name,
-          sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + e.dateFull : 'Pagó ' + payer.short + ' · ' + e.dateFull,
+          sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + df : 'Pagó ' + payer.short + ' · ' + df,
           amountText: fmt(e.amount), avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
           methodId: e.methodId || 'sin', _amt: e.amount,
         }

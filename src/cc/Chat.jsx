@@ -4,6 +4,7 @@ import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
 import { Futuros, Historicos } from './GroupViews'
 import Config from './Config'
+import { dayLabel, fmtDateFull } from './dates'
 
 const card = { background: '#fff', border: '1px solid #EAEEF4', boxShadow: '0 6px 18px -12px rgba(15,23,42,.35)' }
 const aiAvatar = { width: 28, height: 28, borderRadius: '50%', background: BRAND_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: 13, fontWeight: 800 }
@@ -345,7 +346,7 @@ function LedgerView({ s, g, c, bannerLabel, balancePre, balanceAmount, balancePo
   const order = []
   const byDay = {}
   ;(s.ledgers[gid] || []).forEach((e) => {
-    const key = (e.day + ' · ' + e.dateFull).toUpperCase()
+    const key = (dayLabel(e.date) + ' · ' + fmtDateFull(e.date)).toUpperCase()
     if (!byDay[key]) { byDay[key] = []; order.push(key) }
     const cat = catById(s, e.categoryId)
     const payer = memberById(s, gid, e.payerId)

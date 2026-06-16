@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
-import { parseChat, nowTime, guessIcon, adjustSplit, setEqualSplit } from './cc/logic'
+import { parseChat, guessIcon, adjustSplit, setEqualSplit } from './cc/logic'
+import { todayISO, nowTime } from './cc/dates'
 import Inicio from './cc/Inicio'
 import Chat from './cc/Chat'
 import EditSheet from './cc/EditSheet'
@@ -23,7 +24,7 @@ function useDesktop() {
 }
 
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
-const KEY = 'cuentas-claras:v1'
+const KEY = 'cuentas-claras:v2'
 const DATA_KEYS = ['groups', 'splits', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'histSel']
 
 function load() {
@@ -112,7 +113,7 @@ export default function App() {
           cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
         }
         const expId = 'e' + Date.now()
-        const entry = { id: expId, day: 'Hoy', dateFull: '14/jun/26', categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: 'ahora', mode: exp.mode || 'group' }
+        const entry = { id: expId, date: todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group' }
         let splits = prev.splits
         if (exp.split) {
           const ids = Object.keys(prev.splits[g] || {})
