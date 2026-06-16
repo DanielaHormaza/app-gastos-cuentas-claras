@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { compute, fmt, buildHistory, catById, memberById, monthLongLabel, monthData, ledgerMonths, buildCsv, groupCategories, CURRENCIES } from './logic'
-import { monthKeyOf, todayISO } from './dates'
+import { monthKeyOf } from './dates'
 import { METHOD_COLORS } from './initialState'
 import { Chevron, ChevronDown } from './icons'
+import CategoryFilter from './CategoryFilter'
 
 function downloadCsv(text, name) {
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8' })
@@ -102,32 +103,21 @@ export function Futuros({ s, actions }) {
 export function Historicos({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
-  const [catFilter, setCatFilter] = useState(null)
+  const catFilter = s.catFilter
   const cats = groupCategories(s, gid)
   const months = buildHistory(s, gid, catFilter)
   const histMax = Math.max(1, ...months.map((m) => m.total))
   const selKey = s.histSel[gid] || months[months.length - 1].key
   const sel = months.find((m) => m.key === selKey) || months[months.length - 1]
-
-  // Meses con movimientos, del más nuevo al más viejo (para acordeones y export).
   const monthKeys = ledgerMonths(s, gid)
-  const [open, setOpen] = useState(() => ({ [monthKeyOf(todayISO())]: true }))
-  const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }))
 
   return (
     <Scroll>
       {/* exportar */}
       {monthKeys.length > 0 && <ExportBar s={s} gid={gid} monthKeys={monthKeys} />}
 
-      {/* filtro por categoría */}
-      {cats.length > 1 && (
-        <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 4, flexShrink: 0 }}>
-          <FilterChip label="Todas" on={!catFilter} onTap={() => setCatFilter(null)} />
-          {cats.map((c) => (
-            <FilterChip key={c.id} label={c.icon + ' ' + c.name} on={catFilter === c.id} onTap={() => setCatFilter(catFilter === c.id ? null : c.id)} />
-          ))}
-        </div>
-      )}
+      {/* filtro por categoría (desplegable + buscador) */}
+      {cats.length > 0 && <CategoryFilter value={catFilter} cats={cats} onChange={actions.setCatFilter} />}
 
       {/* bar chart (ARS) */}
       <div style={{ background: '#fff', borderRadius: 18, padding: '15px 16px', boxShadow: cardShadow }}>
@@ -154,59 +144,31 @@ export function Historicos({ s, actions }) {
       {g.personal && <MethodBreak s={s} sel={sel} actions={actions} />}
 
       <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '4px 4px 0' }}>MOVIMIENTOS POR MES</div>
-      {monthKeys.map((k) => (
-        <MonthAccordion key={k} s={s} gid={gid} g={g} mkey={k} catFilter={catFilter} expanded={!!open[k]} onToggle={() => toggle(k)} actions={actions} />
-      ))}
+      {monthKeys.map((k) => {
+        const { totals, tuParte, items } = monthData(s, gid, k, catFilter)
+        if (catFilter && items.length === 0) return null
+        const curs = CURRENCIES.filter((cu) => totals[cu])
+        return (
+          <div key={k} onClick={() => actions.openMonthDetail(k)} style={{ background: '#fff', borderRadius: 18, boxShadow: cardShadow, border: '1px solid #EEF1F6', display: 'flex', alignItems: 'center', gap: 11, padding: '14px 14px', cursor: 'pointer' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{monthLongLabel(k)}</div>
+              {!g.personal && (
+                <div style={{ fontSize: 10.5, color: '#94A3B8', fontWeight: 700, marginTop: 1 }}>
+                  tu parte {curs.length ? curs.map((cu) => fmt(tuParte[cu], cu)).join(' · ') : fmt(0)}
+                </div>
+              )}
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              {curs.length ? curs.map((cu) => (
+                <div key={cu} className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220', lineHeight: 1.25 }}>{fmt(totals[cu], cu)}</div>
+              )) : <div className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220' }}>{fmt(0)}</div>}
+            </div>
+            <Chevron size={16} color="#C3CCDA" />
+          </div>
+        )
+      })}
       {monthKeys.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '10px 0' }}>Todavía no hay movimientos.</div>}
     </Scroll>
-  )
-}
-
-/** Un mes desplegable: header con total/tu parte por moneda + detalle al abrir. */
-function MonthAccordion({ s, gid, g, mkey, catFilter, expanded, onToggle, actions }) {
-  const { totals, tuParte, items } = monthData(s, gid, mkey, catFilter)
-  const curs = CURRENCIES.filter((cu) => totals[cu])
-  if (catFilter && items.length === 0) return null // mes sin gastos de esa categoría
-  return (
-    <div style={{ background: '#fff', borderRadius: 18, boxShadow: cardShadow, border: '1px solid #EEF1F6', overflow: 'hidden' }}>
-      <div onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', cursor: 'pointer' }}>
-        <span style={{ flexShrink: 0, transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .2s ease', display: 'inline-flex' }}><ChevronDown size={16} color="#94A3B8" w={2.8} /></span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{monthLongLabel(mkey)}</div>
-          {!g.personal && (
-            <div style={{ fontSize: 10.5, color: '#94A3B8', fontWeight: 700, marginTop: 1 }}>
-              tu parte {curs.length ? curs.map((cu) => fmt(tuParte[cu], cu)).join(' · ') : fmt(0)}
-            </div>
-          )}
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          {curs.length ? curs.map((cu) => (
-            <div key={cu} className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220', lineHeight: 1.25 }}>{fmt(totals[cu], cu)}</div>
-          )) : <div className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220' }}>{fmt(0)}</div>}
-        </div>
-      </div>
-      {expanded && (
-        <div style={{ padding: '2px 10px 10px', display: 'flex', flexDirection: 'column', gap: 7, borderTop: '1px solid #F4F6FA', maxHeight: 360, overflowY: 'auto' }}>
-          {items.map((it) => (
-            <div key={it.id} onClick={() => actions.openEdit(it.entry)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 4px', cursor: 'pointer' }}>
-              <div style={{ width: 36, height: 36, borderRadius: '50%', background: it.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 13, position: 'relative', flexShrink: 0 }}>
-                {it.avatarInitial}
-                <span style={{ position: 'absolute', bottom: -3, right: -3, width: 17, height: 17, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, boxShadow: '0 1px 3px rgba(15,23,42,.2)' }}>{it.catIcon}</span>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 800, fontSize: 13.5, color: '#0B1220', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.title}</div>
-                <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>{it.sub}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div className="num" style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{it.amountText}</div>
-                {it.impText && <div style={{ fontSize: 10.5, fontWeight: 800, color: it.impColor }}>{it.impText}</div>}
-              </div>
-            </div>
-          ))}
-          {items.length === 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#B6BFCC', fontWeight: 700, padding: '8px 0' }}>Sin movimientos.</div>}
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -271,10 +233,6 @@ function MethodBreak({ s, sel, actions }) {
     </div>
   )
 }
-
-const FilterChip = ({ label, on, onTap }) => (
-  <div onClick={onTap} style={{ fontSize: 12, fontWeight: 800, padding: '7px 13px', borderRadius: 999, whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0, background: on ? '#0B1220' : '#F1F4F9', color: on ? '#fff' : '#475569' }}>{label}</div>
-)
 
 const Scroll = ({ children }) => (
   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>

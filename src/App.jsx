@@ -225,6 +225,7 @@ export default function App() {
     // ---- gastos futuros / históricos ----
     toggleMonth: (idx) => set((prev) => ({ expandedMonths: { ...prev.expandedMonths, [idx]: !prev.expandedMonths[idx] } })),
     setHistSel: (g, key) => set((prev) => ({ histSel: { ...prev.histSel, [g]: key } })),
+    setCatFilter: (id) => set({ catFilter: id }),
     openMethodDetail: (mid) => set({ screen: 'methodDetail', methodId: mid }),
     openMonthDetail: (key) => set({ screen: 'monthDetail', monthKey: key, monthFilter: null }),
     setMonthFilter: (id) => set({ monthFilter: id }),

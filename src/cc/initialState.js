@@ -45,6 +45,7 @@ export function makeInitialState() {
     groupQuery: '',
     expandedMonths: { 0: true },
     histSel: {},
+    catFilter: null, // filtro de categoría en históricos / detalle de mes
     newGroup: { name: '', desc: '', members: [], memberName: '', invited: false },
     // config de grupo
     addingMember: false,
