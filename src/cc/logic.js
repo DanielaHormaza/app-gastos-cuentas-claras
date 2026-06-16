@@ -163,8 +163,8 @@ export function monthLongLabel(key) { return MES_LONG[Number(key.slice(5, 7)) - 
 
 // Serie mensual real (últimos 6 meses terminando en el mes actual).
 // El gráfico totaliza ARS (no se mezclan monedas). methods = desglose por medio.
-export function buildHistory(state, gid) {
-  const led = (state.ledgers[gid] || []).filter((e) => !e.future)
+export function buildHistory(state, gid, catFilter = null) {
+  const led = (state.ledgers[gid] || []).filter((e) => !e.future && (!catFilter || e.categoryId === catFilter))
   const cur = monthKeyOf(todayISO())
   const [y, m] = cur.split('-').map(Number)
   const keys = []
@@ -224,14 +224,20 @@ export function impactOf(state, gid, e, daniPct) {
   return { text: 'tu parte ' + fmt(owe, cur), color: '#E11D5B' }
 }
 
+// Categorías presentes en el ledger del grupo (para el filtro de históricos).
+export function groupCategories(state, gid) {
+  const set = new Set((state.ledgers[gid] || []).filter((e) => !e.future).map((e) => e.categoryId))
+  return state.categories.filter((c) => set.has(c.id))
+}
+
 // Detalle de un mes para el desplegable de históricos: totales y "tu parte"
-// por moneda + items (último agregado primero).
-export function monthData(state, gid, key) {
+// por moneda + items (último agregado primero). catFilter = id de categoría o null.
+export function monthData(state, gid, key, catFilter = null) {
   const daniPct = (state.splits[gid] || {}).dani || 0
   const g = state.groups[gid]
   const rows = (state.ledgers[gid] || [])
     .map((e, idx) => ({ e, idx }))
-    .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key)
+    .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key && (!catFilter || x.e.categoryId === catFilter))
     .sort((a, b) => (a.e.date < b.e.date ? 1 : a.e.date > b.e.date ? -1 : b.idx - a.idx))
   const totals = {}
   const tuParte = {}
