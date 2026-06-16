@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { compute, balancePhrase, catById, memberById, descFor, fmt } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
 import { Futuros, Historicos } from './GroupViews'
@@ -17,18 +17,9 @@ export default function Chat({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const c = compute(s, gid)
-  const bp = balancePhrase(s, gid)
+  const lines = balanceLines(s, gid)
   const readOnly = !!s.archived[gid]
-
-  let bannerLabel, balancePre, balanceAmount, balancePost, balanceColor
-  if (g.personal) {
-    const tot = (s.ledgers[gid] || []).reduce((a, e) => a + e.amount, 0)
-    bannerLabel = 'Gastado · junio'
-    balancePre = ''; balanceAmount = fmt(tot); balancePost = ''; balanceColor = '#0B1220'
-  } else {
-    bannerLabel = 'En este grupo'
-    balancePre = bp.pre; balanceAmount = bp.amount; balancePost = bp.post; balanceColor = bp.color
-  }
+  const bannerLabel = g.personal ? 'Gastado' : 'En este grupo'
   const inputHint = g.personal ? 'Anotá un gasto tuyo… ej: 3000 café' : 'Escribí un gasto… ej: 8000 nafta pagó Juan'
 
   return (
@@ -50,10 +41,10 @@ export default function Chat({ s, actions }) {
       {s.menuOpen && <ViewMenu s={s} actions={actions} />}
 
       {s.view === 'chat' && (
-        <ChatView s={s} g={g} c={c} bannerLabel={bannerLabel} balancePre={balancePre} balanceAmount={balanceAmount} balancePost={balancePost} balanceColor={balanceColor} inputHint={inputHint} readOnly={readOnly} actions={actions} />
+        <ChatView s={s} g={g} c={c} bannerLabel={bannerLabel} lines={lines} inputHint={inputHint} readOnly={readOnly} actions={actions} />
       )}
       {s.view === 'ledger' && (
-        <LedgerView s={s} g={g} c={c} bannerLabel={g.personal ? 'Gastado · junio' : 'Saldo en el grupo'} balancePre={balancePre} balanceAmount={balanceAmount} balancePost={balancePost} balanceColor={balanceColor} actions={actions} />
+        <LedgerView s={s} g={g} c={c} bannerLabel={g.personal ? 'Gastado' : 'Saldo en el grupo'} lines={lines} actions={actions} />
       )}
       {s.view === 'months' && <Futuros s={s} actions={actions} />}
       {s.view === 'hist' && <Historicos s={s} actions={actions} />}
@@ -89,7 +80,7 @@ function ViewMenu({ s, actions }) {
   )
 }
 
-function ChatView({ s, g, c, bannerLabel, balancePre, balanceAmount, balancePost, balanceColor, inputHint, readOnly, actions }) {
+function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions }) {
   const gid = g.id
   const scrollRef = useRef(null)
   const thread = s.threads[gid] || []
@@ -104,7 +95,7 @@ function ChatView({ s, g, c, bannerLabel, balancePre, balanceAmount, balancePost
     const cat = ex.categoryId ? catById(s, ex.categoryId) : { icon: ex.catIcon || '🏷️', name: ex.catName || 'Gasto' }
     const payer = memberById(s, gid, ex.payerId)
     return {
-      catIcon: cat.icon, catName: cat.name, amountText: fmt(ex.amount),
+      catIcon: cat.icon, catName: ex.desc || cat.name, amountText: fmt(ex.amount, ex.currency),
       payerInitial: payer.initial, payerColor: payer.color,
       descText: descFor(s, gid, ex, c.daniPct),
       dateText: 'hoy', cuotasText: ex.cuotas ? '· en ' + ex.cuotas + ' cuotas' : '',
@@ -117,9 +108,9 @@ function ChatView({ s, g, c, bannerLabel, balancePre, balanceAmount, balancePost
       <div style={{ margin: '14px 16px 4px', borderRadius: 18, padding: '14px 18px', background: 'linear-gradient(135deg,rgba(46,204,177,.13),rgba(124,58,237,.13))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>{bannerLabel}</div>
-          <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220', marginTop: 1 }}>{balancePre}<span style={{ color: balanceColor }}>{balanceAmount}</span>{balancePost}</div>
+          <BalanceLines lines={lines} size={16} />
         </div>
-        <button onClick={() => actions.goView('ledger')} style={{ border: 'none', background: '#fff', borderRadius: 999, padding: '9px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 12.5, color: '#7C3AED', boxShadow: '0 2px 8px -2px rgba(124,58,237,.3)', cursor: 'pointer' }}>Ver detalle</button>
+        <button onClick={() => actions.goView('ledger')} style={{ border: 'none', background: '#fff', borderRadius: 999, padding: '9px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 12.5, color: '#7C3AED', boxShadow: '0 2px 8px -2px rgba(124,58,237,.3)', cursor: 'pointer', flexShrink: 0 }}>Ver detalle</button>
       </div>
 
       {/* hilo */}
@@ -315,6 +306,32 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
   return null
 }
 
+/** Saldo en una o varias monedas. Si todas comparten la misma frase
+ * (ej. "Juan te debe"), la muestra una vez y junta los montos. */
+export function BalanceLines({ lines, size = 16 }) {
+  const uniform = lines.length > 1 && lines.every((l) => l.pre === lines[0].pre && l.post === lines[0].post)
+  if (uniform) {
+    return (
+      <div style={{ fontWeight: 800, fontSize: size, color: '#0B1220', marginTop: 1, lineHeight: 1.3 }}>
+        {lines[0].pre}
+        {lines.map((l, i) => (
+          <span key={i} style={{ color: l.color }}>{i > 0 ? ' · ' : ''}{l.amount}</span>
+        ))}
+        {lines[0].post}
+      </div>
+    )
+  }
+  return (
+    <div style={{ marginTop: 1 }}>
+      {lines.map((l, i) => (
+        <div key={i} style={{ fontWeight: 800, fontSize: size, color: '#0B1220', lineHeight: 1.3 }}>
+          {l.pre}<span style={{ color: l.color }}>{l.amount}</span>{l.post}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const Row = ({ children, max = '84%' }) => <div style={{ alignSelf: 'flex-start', maxWidth: max, display: 'flex', gap: 9, alignItems: 'flex-start' }}>{children}</div>
 const Ai = ({ mt }) => <div style={{ ...aiAvatar, marginTop: mt ? 2 : 0 }}>✦</div>
 
@@ -338,37 +355,43 @@ function ExpBox({ e }) {
 }
 
 /** Vista Movimientos: feed agrupado por día. */
-function LedgerView({ s, g, c, bannerLabel, balancePre, balanceAmount, balancePost, balanceColor, actions }) {
+function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
   const gid = g.id
-  const arrow = g.personal ? '' : c.net > 1 ? '↑' : c.net < -1 ? '↓' : '='
-  const arrowColor = c.net > 1 ? '#0E9F86' : c.net < -1 ? '#E11D5B' : '#94A3B8'
+  const netArs = c.nets.ARS || 0
+  const arrow = g.personal ? '' : netArs > 1 ? '↑' : netArs < -1 ? '↓' : '='
+  const arrowColor = netArs > 1 ? '#0E9F86' : netArs < -1 ? '#E11D5B' : '#94A3B8'
 
   const order = []
   const byDay = {}
-  ;(s.ledgers[gid] || []).forEach((e) => {
-    const key = (dayLabel(e.date) + ' · ' + fmtDateFull(e.date)).toUpperCase()
-    if (!byDay[key]) { byDay[key] = []; order.push(key) }
-    const cat = catById(s, e.categoryId)
-    const payer = memberById(s, gid, e.payerId)
-    const mine = e.payerId === 'dani'
-    let share = e.mode === 'settled' ? null : e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : c.daniPct / 100
-    const owed = share === null ? 0 : mine ? e.amount * (1 - share) : e.amount * share
-    const meth = s.methods.find((x) => x.id === e.methodId)
-    byDay[key].push({
-      entry: e, avatarColor: payer.color, avatarInitial: payer.initial, catIcon: cat.icon, title: cat.name,
-      sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + e.time : 'Pagó ' + payer.short + ' · ' + e.time,
-      amountText: fmt(e.amount),
-      implText: g.personal ? '' : share === null ? 'saldado' : owed <= 0 ? '—' : (mine ? '+' : '−') + fmt(owed),
-      implColor: g.personal ? '#94A3B8' : share === null ? '#94A3B8' : mine ? '#0E9F86' : '#E11D5B',
+  ;(s.ledgers[gid] || [])
+    .filter((e) => !e.future)
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .forEach((e) => {
+      const key = (dayLabel(e.date) + ' · ' + fmtDateFull(e.date)).toUpperCase()
+      if (!byDay[key]) { byDay[key] = []; order.push(key) }
+      const cat = catById(s, e.categoryId)
+      const payer = memberById(s, gid, e.payerId)
+      const mine = e.payerId === 'dani'
+      const cur = e.currency || 'ARS'
+      const share = e.mode === 'settled' ? null : e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : c.daniPct / 100
+      const owed = share === null ? 0 : mine ? e.amount * (1 - share) : e.amount * share
+      const meth = s.methods.find((x) => x.id === e.methodId)
+      byDay[key].push({
+        entry: e, avatarColor: payer.color, avatarInitial: payer.initial, catIcon: cat.icon, title: e.desc || cat.name,
+        sub: g.personal ? (meth ? meth.name : 'Sin medio') + (e.time ? ' · ' + e.time : '') : 'Pagó ' + payer.short + (e.time ? ' · ' + e.time : ''),
+        amountText: fmt(e.amount, cur),
+        implText: g.personal ? '' : share === null ? 'saldado' : owed <= 0 ? '—' : (mine ? '+' : '−') + fmt(owed, cur),
+        implColor: g.personal ? '#94A3B8' : share === null ? '#94A3B8' : mine ? '#0E9F86' : '#E11D5B',
+      })
     })
-  })
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
       <div style={{ margin: '14px 16px 6px', borderRadius: 16, padding: '13px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>{bannerLabel}</div>
-          <div style={{ fontWeight: 800, fontSize: 15, marginTop: 1, color: '#0B1220' }}>{balancePre}<span style={{ color: balanceColor }}>{balanceAmount}</span>{balancePost}</div>
+          <BalanceLines lines={lines} size={15} />
         </div>
         <div className="num" style={{ fontWeight: 700, fontSize: 22, color: arrowColor }}>{arrow}</div>
       </div>

@@ -2,51 +2,22 @@
  * Lógica de negocio de Cuentas Claras — funciones puras portadas del prototipo.
  * Todas reciben `state` como primer argumento (no mutan nada).
  */
-import { MONTH_ORDER, MONTH_SHORT } from './initialState'
-import { fmtDateFull } from './dates'
+import { fmtDateFull, monthKeyOf, todayISO } from './dates'
 
-// Totales mensuales pasados (mock). BACKEND: traer de la DB.
-export const HISTORY_PAST = {
-  personal: {
-    '2026-01': { total: 9800, methods: { efectivo: 3000, mp: 2800, visa_macro: 4000 } },
-    '2026-02': { total: 14200, methods: { efectivo: 5200, mp: 4000, visa_macro: 5000 } },
-    '2026-03': { total: 25100, methods: { visa_santander: 12000, efectivo: 6100, mp: 7000 } },
-    '2026-04': { total: 18600, methods: { visa_macro: 10000, efectivo: 3600, mp: 5000 } },
-    '2026-05': { total: 22400, methods: { visa_macro: 12000, efectivo: 4400, mp: 6000 } },
-  },
-  pareja: { '2026-01': { total: 28000 }, '2026-02': { total: 33000 }, '2026-03': { total: 51000 }, '2026-04': { total: 38500 }, '2026-05': { total: 42000 } },
-  mamucha: { '2026-01': { total: 7000 }, '2026-02': { total: 8200 }, '2026-03': { total: 11000 }, '2026-04': { total: 9500 }, '2026-05': { total: 9000 } },
-  asado: { '2026-01': { total: 0 }, '2026-02': { total: 0 }, '2026-03': { total: 15000 }, '2026-04': { total: 21000 }, '2026-05': { total: 18000 } },
-}
+// Orden de monedas para mostrar (sin conversión, cada una por separado).
+export const CURRENCIES = ['ARS', 'USD', 'CLP']
+const CUR_PREFIX = { ARS: '$', USD: 'US$', CLP: 'CLP$' }
 
-// Gastos futuros (cuotas + fijos) por grupo (mock).
-export function scheduled(gid) {
-  return {
-    pareja: [
-      { icon: '🛏️', title: 'Sommier', kind: 'cuota', cuotas: 6, startIdx: 0, perMonth: 24000, payerId: 'juan' },
-      { icon: '🏠', title: 'Expensas', kind: 'rec', perMonth: 38000, payerId: 'dani' },
-      { icon: '🎬', title: 'Netflix', kind: 'rec', perMonth: 4000, payerId: 'dani' },
-    ],
-    mamucha: [
-      { icon: '🛋️', title: 'Living nuevo', kind: 'cuota', cuotas: 3, startIdx: 0, perMonth: 30000, payerId: 'dani' },
-      { icon: '💊', title: 'Remedios', kind: 'rec', perMonth: 9000, payerId: 'paula' },
-    ],
-  }[gid] || []
-}
-
-const POOLS = {
-  personal: ['cafe', 'comida', 'super', 'transporte'],
-  pareja: ['super', 'nafta', 'comida', 'hogar'],
-  mamucha: ['farmacia', 'mandados', 'transporte', 'comida'],
-  asado: ['comida', 'super', 'cafe', 'transporte'],
-}
-
-// Formato de monto: "$4.500" / "-$1.200".
-export function fmt(n) {
-  n = Math.round(n)
+// Formato de monto por moneda: "$4.500" / "US$188,60" / "CLP$20.429".
+export function fmt(n, cur = 'ARS') {
+  const pre = CUR_PREFIX[cur] || '$'
   const neg = n < 0 ? '-' : ''
-  const s = Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  return neg + '$' + s
+  // USD conserva hasta 2 decimales; ARS/CLP redondean a entero.
+  const r = cur === 'USD' ? Math.round(Math.abs(n) * 100) / 100 : Math.round(Math.abs(n))
+  const [ip, dp] = r.toString().split('.')
+  const milesEntero = ip.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const decimales = dp ? ',' + dp.padEnd(2, '0') : ''
+  return neg + pre + milesEntero + decimales
 }
 
 export function catById(state, id) {
@@ -80,52 +51,81 @@ export function expShare(e, daniPct) {
   return daniPct / 100
 }
 
-// Neto del grupo y metadatos. net > 0 = te deben; net < 0 = debés.
+// Neto del grupo POR MONEDA (sin conversión). nets[cur] > 0 = te deben.
+// Excluye gastos futuros (cuotas por venir): no afectan el saldo hasta su mes.
 export function compute(state, gid) {
   const sp = state.splits[gid] || {}
   const daniPct = sp.dani || 0
   const members = state.groups[gid].members
   const others = members.filter((m) => m.id !== 'dani')
   const ledger = state.ledgers[gid] || []
-  let net = 0
+  const nets = {}
+  const add = (cur, v) => { nets[cur] = (nets[cur] || 0) + v }
   ledger.forEach((e) => {
+    if (e.future) return
+    const cur = e.currency || 'ARS'
     const share = expShare(e, daniPct)
     if (share === null) return
-    if (e.payerId === 'dani') net += e.amount * (1 - share)
-    else net -= e.amount * share
+    if (e.payerId === 'dani') add(cur, e.amount * (1 - share))
+    else add(cur, -e.amount * share)
   })
   ;(state.payments[gid] || []).forEach((p) => {
-    if (p.to === 'dani') net -= p.amount
-    if (p.from === 'dani') net += p.amount
+    const cur = p.currency || 'ARS'
+    if (p.to === 'dani') add(cur, -p.amount)
+    if (p.from === 'dani') add(cur, p.amount)
   })
-  return { net, daniPct, members, others, other: others[0], twoPerson: members.length === 2 }
+  return { nets, daniPct, members, others, other: others[0], twoPerson: members.length === 2 }
+}
+
+// Monedas con saldo relevante, en orden fijo.
+function curList(obj) {
+  return CURRENCIES.filter((c) => obj[c] !== undefined && Math.abs(obj[c]) >= 1).map((c) => [c, obj[c]])
+}
+
+// Líneas de saldo del grupo (una por moneda). Para el banner / inicio.
+export function balanceLines(state, gid) {
+  const g = state.groups[gid]
+  if (g.personal) {
+    const t = {}
+    ;(state.ledgers[gid] || []).forEach((e) => { if (e.future) return; const cur = e.currency || 'ARS'; t[cur] = (t[cur] || 0) + e.amount })
+    const ls = curList(t).map(([cur, v]) => ({ pre: '', amount: fmt(v, cur), post: '', color: '#0B1220' }))
+    return ls.length ? ls : [{ pre: '', amount: fmt(0), post: '', color: '#0B1220' }]
+  }
+  const c = compute(state, gid)
+  const lines = curList(c.nets).map(([cur, net]) => {
+    if (c.twoPerson) {
+      return net > 0
+        ? { pre: c.other.short + ' te debe ', amount: fmt(net, cur), post: '', color: '#0E9F86' }
+        : { pre: 'Le debés ', amount: fmt(-net, cur), post: ' a ' + c.other.short, color: '#E11D5B' }
+    }
+    return net > 0
+      ? { pre: 'A favor: ', amount: fmt(net, cur), post: '', color: '#0E9F86' }
+      : { pre: 'En contra: ', amount: fmt(-net, cur), post: '', color: '#E11D5B' }
+  })
+  return lines.length ? lines : [{ pre: 'Están a mano', amount: '', post: '', color: '#0E9F86' }]
+}
+
+// Totales por moneda sumando varios grupos (para la cifra hero del inicio).
+export function totalsByCurrency(state, ids) {
+  const t = {}
+  ids.forEach((id) => { const c = compute(state, id); for (const cur in c.nets) t[cur] = (t[cur] || 0) + c.nets[cur] })
+  return curList(t)
 }
 
 // Línea contable de un gasto, con el monto que corresponde según el modo.
 export function descFor(state, gid, ex, daniPct) {
   const g = state.groups[gid]
+  const cur = ex.currency || 'ARS'
   if (g.personal) return 'Lo pagaste vos'
   const share = expShare(ex, daniPct)
   if (share === null) return 'Pagaron ambos · saldado'
   const payer = memberById(state, gid, ex.payerId)
   if (ex.payerId === 'dani') {
     const o = ex.amount * (1 - share)
-    return o > 0 ? 'Pagaste vos · te deben ' + fmt(o) : 'Pagaste vos'
+    return o > 0 ? 'Pagaste vos · te deben ' + fmt(o, cur) : 'Pagaste vos'
   }
   const o = ex.amount * share
-  return o > 0 ? 'Pagó ' + payer.short + ' · debés ' + fmt(o) : 'Pagó ' + payer.short + ' · no participaste'
-}
-
-// Frase de saldo del banner.
-export function balancePhrase(state, gid) {
-  const c = compute(state, gid)
-  if (Math.abs(c.net) < 1) return { pre: 'Están a mano', amount: '', post: '', color: '#0E9F86' }
-  if (c.twoPerson) {
-    if (c.net > 0) return { pre: c.other.short + ' te debe ', amount: fmt(c.net), post: '', color: '#0E9F86' }
-    return { pre: 'Le debés ', amount: fmt(-c.net), post: ' a ' + c.other.short, color: '#E11D5B' }
-  }
-  if (c.net > 0) return { pre: 'A favor: ', amount: fmt(c.net), post: '', color: '#0E9F86' }
-  return { pre: 'En contra: ', amount: fmt(-c.net), post: '', color: '#E11D5B' }
+  return o > 0 ? 'Pagó ' + payer.short + ' · debés ' + fmt(o, cur) : 'Pagó ' + payer.short + ' · no participaste'
 }
 
 // ===== Parser de lenguaje natural =====
@@ -152,71 +152,51 @@ export function resolveCat(state, gid, t) {
   return { id: null, name, icon: guessIcon(label) }
 }
 
-// Serie mensual de un grupo (últimos 6); el mes actual usa el ledger real.
+const MES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+const MES_LONG = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+export function monthShortLabel(key) { return MES_SHORT[Number(key.slice(5, 7)) - 1] }
+export function monthLongLabel(key) { return MES_LONG[Number(key.slice(5, 7)) - 1] + ' ' + key.slice(0, 4) }
+
+// Serie mensual real (últimos 6 meses terminando en el mes actual).
+// El gráfico totaliza ARS (no se mezclan monedas). methods = desglose por medio.
 export function buildHistory(state, gid) {
-  return MONTH_ORDER.map((key) => {
-    let total, methods
-    if (key === '2026-06') {
-      const led = state.ledgers[gid] || []
-      total = led.reduce((a, e) => a + e.amount, 0)
-      methods = {}
-      led.forEach((e) => {
-        const k = e.methodId || 'sin'
-        methods[k] = (methods[k] || 0) + e.amount
-      })
-    } else {
-      const d = (HISTORY_PAST[gid] || {})[key]
-      total = d ? d.total : 0
-      methods = d ? d.methods || {} : {}
-    }
-    return { key, label: MONTH_SHORT[key], total, methods, current: key === '2026-06' }
+  const led = (state.ledgers[gid] || []).filter((e) => !e.future)
+  const cur = monthKeyOf(todayISO())
+  const [y, m] = cur.split('-').map(Number)
+  const keys = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1)
+    keys.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'))
+  }
+  return keys.map((key) => {
+    const inMonth = led.filter((e) => monthKeyOf(e.date) === key)
+    const total = inMonth.filter((e) => (e.currency || 'ARS') === 'ARS').reduce((a, e) => a + e.amount, 0)
+    const methods = {}
+    inMonth.forEach((e) => { const k = e.methodId || 'sin'; methods[k] = (methods[k] || 0) + e.amount })
+    return { key, label: monthShortLabel(key), total, methods, current: key === cur }
   })
 }
 
-// Movimientos de un mes; meses pasados se sintetizan a partir del total.
+// Movimientos reales de un mes (cualquier moneda), más nuevos primero.
 export function monthMovements(state, gid, key) {
   const g = state.groups[gid]
-  if (key === '2026-06') {
-    return (state.ledgers[gid] || [])
-      .slice()
-      .reverse()
-      .map((e) => {
-        const cat = catById(state, e.categoryId)
-        const payer = memberById(state, gid, e.payerId)
-        const meth = state.methods.find((x) => x.id === e.methodId)
-        const df = fmtDateFull(e.date)
-        return {
-          catIcon: cat.icon, title: cat.name,
-          sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + df : 'Pagó ' + payer.short + ' · ' + df,
-          amountText: fmt(e.amount), avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
-          methodId: e.methodId || 'sin', _amt: e.amount,
-        }
-      })
-  }
-  const d = (HISTORY_PAST[gid] || {})[key]
-  const total = d ? d.total : 0
-  if (!total) return []
-  const pool = POOLS[gid] || state.categories.slice(0, 4).map((c) => c.id)
-  const weights = [0.4, 0.3, 0.2, 0.1]
-  const days = [27, 20, 13, 5]
-  const members = g.members
-  const methodKeys = d.methods ? Object.keys(d.methods).filter((k) => d.methods[k] > 0) : []
-  let acc = 0
-  return pool.map((cid, i) => {
-    const amt = i === pool.length - 1 ? total - acc : Math.round((total * weights[i]) / 100) * 100
-    acc += amt
-    const cat = catById(state, cid)
-    const payer = members[i % members.length]
-    const mk = methodKeys.length ? methodKeys[i % methodKeys.length] : null
-    const meth = mk && mk !== 'sin' ? state.methods.find((x) => x.id === mk) : null
-    const dateFull = days[i] + '/' + MONTH_SHORT[key].toLowerCase() + '/26'
-    return {
-      catIcon: cat.icon, title: cat.name,
-      sub: g.personal ? (meth ? meth.name : 'Efectivo') + ' · ' + dateFull : 'Pagó ' + payer.short + ' · ' + dateFull,
-      amountText: fmt(amt), avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
-      methodId: meth ? meth.id : mk === 'sin' ? 'sin' : 'efectivo', _amt: amt,
-    }
-  })
+  return (state.ledgers[gid] || [])
+    .filter((e) => !e.future && monthKeyOf(e.date) === key)
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .map((e) => {
+      const cat = catById(state, e.categoryId)
+      const payer = memberById(state, gid, e.payerId)
+      const meth = state.methods.find((x) => x.id === e.methodId)
+      const df = fmtDateFull(e.date)
+      const cur = e.currency || 'ARS'
+      return {
+        catIcon: cat.icon, title: e.desc || cat.name,
+        sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + df : 'Pagó ' + payer.short + ' · ' + df,
+        amountText: fmt(e.amount, cur), avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
+        methodId: e.methodId || 'sin', _amt: e.amount, _cur: cur,
+      }
+    })
 }
 
 // Ajusta el % de un miembro (pasos de 5) y rebalancea al resto para sumar 100.
@@ -307,7 +287,11 @@ export function parseChat(state, gid, text) {
   const split = sm ? { a: parseInt(sm[1], 10), b: parseInt(sm[2], 10) } : null
   const mode = forcedMode || 'group'
   const finalPayer = forcedMode ? forcedPayer : payerId
-  const exp = { amount, categoryId: cat.id, catName: cat.name, catIcon: cat.icon, payerId: finalPayer, cuotas, split, mode }
+  // moneda (default ARS; sin conversión)
+  let currency = 'ARS'
+  if (/\b(usd|u\$s|d[oó]lar|d[oó]lares)\b/.test(t)) currency = 'USD'
+  else if (/\b(clp|peso chileno|pesos chilenos)\b/.test(t)) currency = 'CLP'
+  const exp = { amount, categoryId: cat.id, catName: cat.name, catIcon: cat.icon, payerId: finalPayer, cuotas, split, mode, currency }
   if (!finalPayer) {
     delete exp.payerId
     return { kind: 'ambiguous', exp }

@@ -1,46 +1,38 @@
-import { compute, fmt, buildHistory, scheduled, catById } from './logic'
-import { METHOD_COLORS, MONTH_LONG } from './initialState'
+import { compute, fmt, buildHistory, catById, memberById, monthLongLabel } from './logic'
+import { monthKeyOf } from './dates'
+import { METHOD_COLORS } from './initialState'
 import { Chevron, ChevronDown } from './icons'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
-const MONTH_NAMES = ['Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre']
 
-/** Vista "Gastos futuros": cuotas y fijos por venir (solo grupos). */
+/** Vista "Gastos futuros": cuotas por venir (solo grupos). */
 export function Futuros({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const c = compute(s, gid)
+  const fut = (s.ledgers[gid] || []).filter((e) => e.future).slice().sort((a, b) => (a.date < b.date ? -1 : 1))
 
-  if (g.personal) {
+  if (g.personal || fut.length === 0) {
     return (
       <Scroll>
         <div style={{ textAlign: 'center', padding: '36px 16px', color: '#B6BFCC' }}>
           <div style={{ fontSize: 32, marginBottom: 10 }}>🗓️</div>
           <div style={{ fontSize: 14, fontWeight: 800, color: '#64748B', marginBottom: 4 }}>Sin gastos futuros</div>
-          <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.45 }}>Acá vas a ver cuotas o gastos fijos personales que cargues a futuro.</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.45 }}>Acá vas a ver cuotas o gastos fijos que cargues a futuro.</div>
         </div>
       </Scroll>
     )
   }
 
-  const sched = scheduled(gid)
-  let totalAmbos = 0
-  const months = MONTH_NAMES.map((label, idx) => {
-    const items = []
-    sched.forEach((sc) => {
-      const payer = g.members.find((m) => m.id === sc.payerId) || { initial: '?', color: '#94A3B8', short: '?' }
-      if (sc.kind === 'rec') items.push({ icon: sc.icon, title: sc.title, kindText: 'Gasto fijo', amount: sc.perMonth, payer })
-      else if (sc.kind === 'cuota' && idx >= sc.startIdx && idx < sc.startIdx + sc.cuotas) items.push({ icon: sc.icon, title: sc.title, kindText: 'Cuota ' + (idx - sc.startIdx + 1) + '/' + sc.cuotas, amount: sc.perMonth, payer })
-    })
-    const mTotal = items.reduce((a, b) => a + b.amount, 0)
-    totalAmbos += mTotal
-    return { idx, label: label + ' 2026', isCurrent: idx === 0, items, mTotal, expanded: !!s.expandedMonths[idx] }
-  })
+  const byKey = {}
+  const order = []
+  fut.forEach((e) => { const k = monthKeyOf(e.date); if (!byKey[k]) { byKey[k] = []; order.push(k) } byKey[k].push(e) })
+  const totalAmbos = fut.filter((e) => (e.currency || 'ARS') === 'ARS').reduce((a, e) => a + e.amount, 0)
 
   return (
     <Scroll>
       <div style={{ borderRadius: 18, padding: '14px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.13),rgba(124,58,237,.13))' }}>
-        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', letterSpacing: '0.05em', marginBottom: 10 }}>COMPROMETIDO · PRÓXIMOS 6 MESES</div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', letterSpacing: '0.05em', marginBottom: 10 }}>COMPROMETIDO · PRÓXIMOS MESES</div>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Total de ambos</div>
@@ -53,62 +45,65 @@ export function Futuros({ s, actions }) {
           </div>
         </div>
       </div>
-      <div style={{ fontSize: 11.5, color: '#64748B', fontWeight: 600, background: '#fff', borderRadius: 12, padding: '9px 11px', display: 'flex', alignItems: 'center', gap: 7, boxShadow: cardShadow }}>
-        <span style={{ fontSize: 14 }}>💳</span>El avatar indica quién puso la tarjeta de esa cuota.
-      </div>
-      {months.map((m) => (
-        <div key={m.idx} style={{ background: '#fff', borderRadius: 18, padding: 14, boxShadow: cardShadow, border: m.isCurrent ? '1.5px solid #D9C9FB' : '1px solid #EEF1F6' }}>
-          <div onClick={() => actions.toggleMonth(m.idx)} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-            <span style={{ flexShrink: 0, transform: m.expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .2s ease', display: 'inline-flex' }}><ChevronDown size={16} color="#94A3B8" w={2.8} /></span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-              <span style={{ fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{m.label}</span>
-              {m.isCurrent && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#7C3AED', background: '#F1ECFD', padding: '3px 7px', borderRadius: 999, whiteSpace: 'nowrap' }}>ESTE MES</span>}
+
+      {order.map((k, idx) => {
+        const items = byKey[k]
+        const mTotal = items.filter((e) => (e.currency || 'ARS') === 'ARS').reduce((a, e) => a + e.amount, 0)
+        const expanded = !!s.expandedMonths[idx]
+        return (
+          <div key={k} style={{ background: '#fff', borderRadius: 18, padding: 14, boxShadow: cardShadow, border: '1px solid #EEF1F6' }}>
+            <div onClick={() => actions.toggleMonth(idx)} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <span style={{ flexShrink: 0, transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .2s ease', display: 'inline-flex' }}><ChevronDown size={16} color="#94A3B8" w={2.8} /></span>
+              <div style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{monthLongLabel(k)}</div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="num" style={{ fontWeight: 700, fontSize: 17, color: '#0B1220', letterSpacing: '-0.02em' }}>{fmt(mTotal)}</div>
+                <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, whiteSpace: 'nowrap' }}>tu parte {fmt((mTotal * c.daniPct) / 100)}</div>
+              </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="num" style={{ fontWeight: 700, fontSize: 17, color: '#0B1220', letterSpacing: '-0.02em' }}>{fmt(m.mTotal)}</div>
-              <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, whiteSpace: 'nowrap' }}>tu parte {fmt((m.mTotal * c.daniPct) / 100)}</div>
-            </div>
-          </div>
-          {m.expanded && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 13, paddingTop: 13, borderTop: '1px solid #F1F4F9' }}>
-              {m.items.length === 0 && <div style={{ fontSize: 12, color: '#B6BFCC', fontWeight: 700, textAlign: 'center' }}>Nada este mes.</div>}
-              {m.items.map((it, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 30, height: 30, borderRadius: 9, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>{it.icon}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{it.title}</div>
-                    <div style={{ fontSize: 10.5, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {it.kindText} · <span style={{ width: 14, height: 14, borderRadius: 4, background: it.payer.color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, flexShrink: 0 }}>{it.payer.initial}</span>{it.payer.short}
+            {expanded && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 13, paddingTop: 13, borderTop: '1px solid #F1F4F9' }}>
+                {items.map((e) => {
+                  const cat = catById(s, e.categoryId)
+                  const payer = memberById(s, gid, e.payerId)
+                  return (
+                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: 9, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>{cat.icon}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{e.desc || cat.name}</div>
+                        <div style={{ fontSize: 10.5, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {e.cuota ? 'Cuota ' + e.cuota.n + '/' + e.cuota.total : 'Gasto fijo'} · <span style={{ width: 14, height: 14, borderRadius: 4, background: payer.color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, flexShrink: 0 }}>{payer.initial}</span>{payer.short}
+                        </div>
+                      </div>
+                      <div className="num" style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{fmt(e.amount, e.currency)}</div>
                     </div>
-                  </div>
-                  <div className="num" style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{fmt(it.amount)}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </Scroll>
   )
 }
 
-/** Vista "Gastos históricos": barras por mes + desglose + movimientos por mes. */
+/** Vista "Gastos históricos": barras por mes (ARS) + movimientos por mes. */
 export function Historicos({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const months = buildHistory(s, gid)
   const histMax = Math.max(1, ...months.map((m) => m.total))
-  const selKey = s.histSel[gid] || '2026-06'
+  const selKey = s.histSel[gid] || months[months.length - 1].key
   const sel = months.find((m) => m.key === selKey) || months[months.length - 1]
 
   return (
     <Scroll>
-      {/* bar chart */}
+      {/* bar chart (ARS) */}
       <div style={{ background: '#fff', borderRadius: 18, padding: '15px 16px', boxShadow: cardShadow }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 13 }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>Gastos por mes</div>
-            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginTop: 1 }}>{MONTH_LONG[sel.key]}</div>
+            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginTop: 1 }}>{monthLongLabel(sel.key)} · en ARS</div>
           </div>
           <div className="num" style={{ fontWeight: 700, fontSize: 22, letterSpacing: '-0.02em', color: '#0B1220' }}>{fmt(sel.total)}</div>
         </div>
@@ -125,16 +120,14 @@ export function Historicos({ s, actions }) {
         </div>
       </div>
 
-      {/* por medio de pago (personal) */}
       {g.personal && <MethodBreak s={s} sel={sel} actions={actions} />}
 
-      {/* movimientos por mes */}
       <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '4px 4px 0' }}>MOVIMIENTOS POR MES</div>
       <div style={{ background: '#fff', borderRadius: 18, padding: '6px 14px', boxShadow: cardShadow }}>
         {months.slice().reverse().map((m) => (
           <div key={m.key} onClick={() => actions.openMonthDetail(m.key)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 4px', borderBottom: '1px solid #F4F6FA', cursor: 'pointer' }}>
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.current ? '#7C3AED' : '#CBD5E1', flexShrink: 0 }} />
-            <span style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{MONTH_LONG[m.key]}</span>
+            <span style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{monthLongLabel(m.key)}</span>
             <span className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220' }}>{fmt(m.total)}</span>
             <Chevron size={16} color="#C3CCDA" />
           </div>
@@ -152,7 +145,7 @@ function MethodBreak({ s, sel, actions }) {
     <div style={{ background: '#fff', borderRadius: 18, padding: '15px 16px', boxShadow: cardShadow }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }}>
         <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>Por medio de pago</div>
-        <span style={{ fontSize: 11, fontWeight: 800, color: '#7C3AED', background: '#F1ECFD', padding: '3px 9px', borderRadius: 999 }}>{MONTH_LONG[sel.key]}</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: '#7C3AED', background: '#F1ECFD', padding: '3px 9px', borderRadius: 999 }}>{monthLongLabel(sel.key)}</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {sorted.map(([mid, amt], i) => {

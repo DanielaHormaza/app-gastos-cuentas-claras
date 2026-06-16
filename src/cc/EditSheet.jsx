@@ -52,9 +52,17 @@ function Fields({ s, g, dr, c, actions }) {
       </div>
 
       <div style={label}>MONTO</div>
-      <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '6px 14px', marginBottom: 18 }}>
-        <span className="num" style={{ fontSize: 24, fontWeight: 700, color: '#94A3B8' }}>$</span>
+      <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '6px 14px', marginBottom: 12 }}>
+        <span className="num" style={{ fontSize: 24, fontWeight: 700, color: '#94A3B8' }}>{dr.currency === 'USD' ? 'US$' : dr.currency === 'CLP' ? 'CLP$' : '$'}</span>
         <input value={dr.amount} onChange={(e) => actions.onAmount(e.target.value)} inputMode="numeric" className="num" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 26, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.01em', marginLeft: 4, width: '100%', background: 'transparent' }} />
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+        {['ARS', 'USD', 'CLP'].map((cu) => {
+          const on = (dr.currency || 'ARS') === cu
+          return (
+            <button key={cu} onClick={() => actions.pickCurrency(cu)} style={{ flex: 1, border: on ? '1.5px solid #7C3AED' : '1.5px solid #E2E8F0', background: on ? '#F1ECFD' : '#fff', color: on ? '#7C3AED' : '#64748B', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, padding: '8px', borderRadius: 11, cursor: 'pointer' }}>{cu}</button>
+          )
+        })}
       </div>
 
       {g.personal ? (

@@ -1,4 +1,4 @@
-import { compute, fmt } from './logic'
+import { compute, fmt, totalsByCurrency, CURRENCIES } from './logic'
 import { Logo, Chevron, Plus, Archive } from './icons'
 
 /** Pantalla Inicio: cifra hero + "Mis gastos" + lista de grupos + archivados. */
@@ -7,11 +7,11 @@ export default function Inicio({ s, actions }) {
   const activeIds = allIds.filter((id) => !s.archived[id])
   const archivedIds = allIds.filter((id) => s.archived[id])
 
-  let total = 0
-  activeIds.forEach((id) => (total += compute(s, id).net))
-  const totalLabel = Math.abs(total) < 1 ? 'Estás al día' : total > 0 ? 'En total, te deben' : 'En total, debés'
-  const totalText = Math.abs(total) < 1 ? '$0' : fmt(Math.abs(total))
-  const totalColor = total >= 0 ? '#0B1220' : '#E11D5B'
+  // Total por moneda (sin conversión). Cada moneda es una línea.
+  const totals = totalsByCurrency(s, activeIds) // [[cur, net], ...]
+  const allPos = totals.every(([, v]) => v >= 0)
+  const allNeg = totals.every(([, v]) => v < 0)
+  const totalLabel = totals.length === 0 ? 'Estás al día' : allPos ? 'En total, te deben' : allNeg ? 'En total, debés' : 'Tu saldo'
 
   const personalSum = (s.ledgers.personal || []).reduce((a, e) => a + e.amount, 0)
   const prof = s.profile
@@ -40,10 +40,18 @@ export default function Inicio({ s, actions }) {
         </div>
       </div>
 
-      {/* cifra hero */}
+      {/* cifra hero (una línea por moneda; sin conversión) */}
       <div style={{ padding: '24px 26px 20px' }}>
         <div style={{ fontSize: 13, color: '#94A3B8', fontWeight: 700 }}>{totalLabel}</div>
-        <div className="num" style={{ fontSize: 44, fontWeight: 700, letterSpacing: '-0.03em', color: totalColor, marginTop: 4 }}>{totalText}</div>
+        {totals.length === 0 ? (
+          <div className="num" style={{ fontSize: 44, fontWeight: 700, letterSpacing: '-0.03em', color: '#0B1220', marginTop: 4 }}>$0</div>
+        ) : (
+          totals.map(([cur, v], i) => (
+            <div key={cur} className="num" style={{ fontSize: i === 0 ? 44 : 22, fontWeight: 700, letterSpacing: '-0.03em', color: v >= 0 ? '#0B1220' : '#E11D5B', marginTop: i === 0 ? 4 : 0, lineHeight: 1.1 }}>
+              {fmt(Math.abs(v), cur)}
+            </div>
+          ))
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -69,12 +77,10 @@ export default function Inicio({ s, actions }) {
           {activeIds.map((id) => {
             const g = s.groups[id]
             const c = compute(s, id)
-            let balanceLabel, balanceColor
-            if (Math.abs(c.net) < 1) { balanceLabel = 'a mano'; balanceColor = '#94A3B8' }
-            else if (c.net > 0) { balanceLabel = 'te debe'; balanceColor = '#0E9F86' }
-            else { balanceLabel = 'le debés'; balanceColor = '#E11D5B' }
+            const curs = CURRENCIES.filter((cu) => Math.abs(c.nets[cu] || 0) >= 1)
             const others = g.members.filter((m) => m.id !== 'dani')
             const membersText = others.length === 1 ? others[0].short + ' y vos' : g.members.length + ' personas'
+            const label = curs.length === 0 ? 'a mano' : (c.nets[curs[0]] > 0 ? 'te debe' : 'le debés')
             return (
               <div
                 key={id}
@@ -87,8 +93,14 @@ export default function Inicio({ s, actions }) {
                   <div style={{ fontSize: 13, color: '#94A3B8', fontWeight: 600 }}>{membersText}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: 800, fontSize: 14.5, color: balanceColor }}>{Math.abs(c.net) < 1 ? '$0' : fmt(Math.abs(c.net))}</div>
-                  <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>{balanceLabel}</div>
+                  {curs.length === 0 ? (
+                    <div style={{ fontWeight: 800, fontSize: 14.5, color: '#94A3B8' }}>$0</div>
+                  ) : (
+                    curs.map((cu) => (
+                      <div key={cu} style={{ fontWeight: 800, fontSize: 14.5, color: c.nets[cu] > 0 ? '#0E9F86' : '#E11D5B', lineHeight: 1.25 }}>{fmt(Math.abs(c.nets[cu]), cu)}</div>
+                    ))
+                  )}
+                  <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>{label}</div>
                 </div>
               </div>
             )

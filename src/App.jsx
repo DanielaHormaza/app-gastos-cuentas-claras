@@ -24,7 +24,7 @@ function useDesktop() {
 }
 
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
-const KEY = 'cuentas-claras:v2'
+const KEY = 'cuentas-claras:v3'
 const DATA_KEYS = ['groups', 'splits', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'histSel']
 
 function load() {
@@ -55,7 +55,7 @@ export default function App() {
 
   // Abre la hoja de edición para un gasto del ledger.
   const openEdit = (e) =>
-    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, methodId: e.methodId || null, mode: e.mode || 'group' }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
+    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS' }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
 
   const actions = {
     // ---- navegación ----
@@ -113,7 +113,7 @@ export default function App() {
           cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
         }
         const expId = 'e' + Date.now()
-        const entry = { id: expId, date: todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group' }
+        const entry = { id: expId, date: todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS' }
         let splits = prev.splits
         if (exp.split) {
           const ids = Object.keys(prev.splits[g] || {})
@@ -208,10 +208,11 @@ export default function App() {
     onMethodQuery: (v) => set({ methodQuery: v }),
     pickMethod: (id) => set((prev) => ({ draft: { ...prev.draft, methodId: id }, editPanel: null, methodQuery: '' })),
     pickMode: (k) => set((prev) => ({ draft: { ...prev.draft, mode: k }, editPanel: null })),
+    pickCurrency: (cur) => set((prev) => ({ draft: { ...prev.draft, currency: cur } })),
     onSave: () =>
       set((prev) => {
         const g = prev.groupId
-        const l = (prev.ledgers[g] || []).map((it) => (it.id === prev.editId ? { ...it, categoryId: prev.draft.categoryId, amount: prev.draft.amount, payerId: prev.draft.payerId, methodId: prev.draft.methodId !== undefined ? prev.draft.methodId : it.methodId || null, mode: prev.draft.mode || 'group' } : it))
+        const l = (prev.ledgers[g] || []).map((it) => (it.id === prev.editId ? { ...it, categoryId: prev.draft.categoryId, amount: prev.draft.amount, payerId: prev.draft.payerId, methodId: prev.draft.methodId !== undefined ? prev.draft.methodId : it.methodId || null, mode: prev.draft.mode || 'group', currency: prev.draft.currency || 'ARS' } : it))
         return { ledgers: { ...prev.ledgers, [g]: l }, editId: null, draft: null, editPanel: null }
       }),
     onDelete: () =>

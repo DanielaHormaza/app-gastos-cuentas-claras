@@ -1,6 +1,5 @@
 import { Back } from './icons'
-import { fmt, catById, buildHistory, monthMovements } from './logic'
-import { MONTH_LONG } from './initialState'
+import { fmt, catById, buildHistory, monthMovements, monthLongLabel, CURRENCIES } from './logic'
 import { fmtDateFull } from './dates'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
@@ -33,8 +32,8 @@ export function MethodDetail({ s, actions }) {
             return (
               <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 11 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 12, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{cat.icon}</div>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{cat.name}</div><div style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600 }}>{fmtDateFull(e.date)}</div></div>
-                <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{fmt(e.amount)}</div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{e.desc || cat.name}</div><div style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600 }}>{fmtDateFull(e.date)}</div></div>
+                <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{fmt(e.amount, e.currency)}</div>
               </div>
             )
           })}
@@ -45,7 +44,7 @@ export function MethodDetail({ s, actions }) {
         <div style={{ background: '#fff', borderRadius: 16, padding: '6px 14px', boxShadow: cardShadow }}>
           {mh.slice().reverse().map((m) => (
             <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 4px', borderBottom: '1px solid #F4F6FA' }}>
-              <span style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{MONTH_LONG[m.key]}</span>
+              <span style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{monthLongLabel(m.key)}</span>
               <span className="num" style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{fmt((m.methods && m.methods[mid || 'sin']) || 0)}</span>
             </div>
           ))}
@@ -63,7 +62,11 @@ export function MonthDetail({ s, actions }) {
   const all = monthMovements(s, gid, key)
   const fkey = s.monthFilter
   const list = g.personal && fkey ? all.filter((m) => m.methodId === fkey) : all
-  const total = list.reduce((a, m) => a + m._amt, 0)
+
+  // Total por moneda (sin conversión).
+  const totByCur = {}
+  list.forEach((m) => { totByCur[m._cur] = (totByCur[m._cur] || 0) + m._amt })
+  const totLines = CURRENCIES.filter((cu) => totByCur[cu]).map((cu) => fmt(totByCur[cu], cu))
 
   let filters = []
   if (g.personal) {
@@ -75,11 +78,13 @@ export function MonthDetail({ s, actions }) {
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#F4F6FA', animation: 'ccIn .26s ease' }}>
-      <Header title={MONTH_LONG[key]} onBack={actions.backToHist} />
+      <Header title={monthLongLabel(key)} onBack={actions.backToHist} />
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 9 }}>
         <div style={{ borderRadius: 16, padding: '14px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>Total del mes</div>
-          <div className="num" style={{ fontWeight: 700, fontSize: 22, letterSpacing: '-0.02em', color: '#0B1220' }}>{fmt(total)}</div>
+          <div style={{ textAlign: 'right' }}>
+            {totLines.length ? totLines.map((t, i) => <div key={i} className="num" style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.02em', color: '#0B1220', lineHeight: 1.2 }}>{t}</div>) : <div className="num" style={{ fontWeight: 700, fontSize: 20, color: '#0B1220' }}>{fmt(0)}</div>}
+          </div>
         </div>
 
         {g.personal && (
