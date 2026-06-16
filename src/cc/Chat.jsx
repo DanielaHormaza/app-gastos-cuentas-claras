@@ -98,7 +98,7 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions })
       catIcon: cat.icon, catName: ex.desc || cat.name, amountText: fmt(ex.amount, ex.currency),
       payerInitial: payer.initial, payerColor: payer.color,
       descText: descFor(s, gid, ex, c.daniPct),
-      dateText: 'hoy', cuotasText: ex.cuotas ? '· en ' + ex.cuotas + ' cuotas' : '',
+      dateText: ex.date ? fmtDateFull(ex.date) : 'hoy', cuotasText: ex.cuotas ? '· en ' + ex.cuotas + ' cuotas' : '',
     }
   }
 

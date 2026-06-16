@@ -113,7 +113,7 @@ export default function App() {
           cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
         }
         const expId = 'e' + Date.now()
-        const entry = { id: expId, date: todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS' }
+        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS' }
         let splits = prev.splits
         if (exp.split) {
           const ids = Object.keys(prev.splits[g] || {})

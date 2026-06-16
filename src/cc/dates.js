@@ -40,6 +40,26 @@ export function monthKeyOf(iso) {
   return (iso || '').slice(0, 7)
 }
 
+const MESES = { enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5, julio: 6, agosto: 7, septiembre: 8, setiembre: 8, octubre: 9, noviembre: 10, diciembre: 11 }
+export const NOMBRES_MES = Object.keys(MESES).join('|')
+
+// Lee una fecha en lenguaje natural: "31 de mayo [de 2026]", "ayer", "hoy",
+// "anteayer". Devuelve ISO o null si no encuentra.
+export function parseSpanishDate(text) {
+  const t = ' ' + (text || '').toLowerCase() + ' '
+  if (/\banteayer\b/.test(t)) return isoFromOffset(2)
+  if (/\bayer\b/.test(t)) return isoFromOffset(1)
+  if (/\bhoy\b/.test(t)) return todayISO()
+  const m = t.match(new RegExp('(\\d{1,2})\\s+de\\s+(' + NOMBRES_MES + ')(?:\\s+de\\s+(\\d{4}))?'))
+  if (m) {
+    const d = parseInt(m[1], 10)
+    const mo = MESES[m[2]]
+    const y = m[3] ? parseInt(m[3], 10) : new Date().getFullYear()
+    if (d >= 1 && d <= 31) return y + '-' + pad(mo + 1) + '-' + pad(d)
+  }
+  return null
+}
+
 // Etiqueta relativa a hoy: Hoy / Ayer / Lun…Sáb (misma semana) / 15/jun/26.
 export function dayLabel(iso) {
   const today = new Date()

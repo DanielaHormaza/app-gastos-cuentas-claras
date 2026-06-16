@@ -2,7 +2,7 @@
  * Lógica de negocio de Cuentas Claras — funciones puras portadas del prototipo.
  * Todas reciben `state` como primer argumento (no mutan nada).
  */
-import { fmtDateFull, monthKeyOf, todayISO } from './dates'
+import { fmtDateFull, monthKeyOf, todayISO, parseSpanishDate, NOMBRES_MES } from './dates'
 
 // Orden de monedas para mostrar (sin conversión, cada una por separado).
 export const CURRENCIES = ['ARS', 'USD', 'CLP']
@@ -135,6 +135,10 @@ const STOP = new Set([
   'por', 'ayer', 'hoy', 'que', 'un', 'una', 'mi', 'su', 'le', 'solo', 'entre', 'entreambos', 'a',
   'entró', 'perdon', 'perdón', 'eran', 'era', 'debo', 'debe', 'deben', 'debés', 'debes', 'total',
   'todo', 'toda', 'mama', 'mamá', 'papa', 'papá', 'ambos',
+  // monedas y fechas (no son categorías)
+  'usd', 'u$s', 'dolar', 'dólar', 'dolares', 'dólares', 'clp', 'pesos', 'chilenos', 'dia', 'día',
+  'anteayer', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+  'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre',
 ])
 
 function extractCat(state, gid, t) {
@@ -319,11 +323,23 @@ export function parseChat(state, gid, text) {
   const members = g.members
   const t = ' ' + text.toLowerCase() + ' '
   if (/borr[aá]|elimin[aá]/.test(t) && /[uú]ltimo/.test(t)) return { kind: 'correction', cor: { type: 'del' } }
-  const nums = (t.match(/\d[\d.]*/g) || []).map((x) => parseInt(x.replace(/\./g, ''), 10)).filter((n) => n >= 100)
-  const amount = nums.length ? nums[0] : null
+  // moneda (default ARS, sin conversión) — se detecta primero porque define el umbral del monto
+  let currency = 'ARS'
+  if (/\b(usd|u\$s|d[oó]lar|d[oó]lares)\b/.test(t)) currency = 'USD'
+  else if (/\b(clp|peso chileno|pesos chilenos)\b/.test(t)) currency = 'CLP'
+  // fecha en lenguaje natural ("31 de mayo", "ayer", "hoy"); null = hoy al confirmar
+  const date = parseSpanishDate(text)
   const sm = t.match(/(\d{1,2})\s*[/]\s*(\d{1,2})/)
   const cm = t.match(/(\d+)\s*cuota/)
   const cuotas = cm ? parseInt(cm[1], 10) : null
+  // monto: limpio del texto los números que NO son monto (fecha, cuotas, split)
+  let work = t.replace(new RegExp('\\d{1,2}\\s+de\\s+(' + NOMBRES_MES + ')(\\s+de\\s+\\d{4})?', 'g'), ' ').replace(/\bd[ií]a\s+\d{1,2}/g, ' ')
+  if (cm) work = work.replace(cm[0], ' ')
+  if (sm) work = work.replace(sm[0], ' ')
+  // umbral: ARS ignora < 100 (evita ruido); USD/CLP aceptan montos chicos (ej. 20 USD)
+  const minAmt = currency === 'ARS' ? 100 : 1
+  const nums = (work.match(/\d[\d.]*/g) || []).map((x) => parseInt(x.replace(/\./g, ''), 10)).filter((n) => n >= minAmt)
+  const amount = nums.length ? nums[0] : null
   // modo de división por gasto
   let forcedMode = null
   let forcedPayer = null
@@ -369,11 +385,7 @@ export function parseChat(state, gid, text) {
   const split = sm ? { a: parseInt(sm[1], 10), b: parseInt(sm[2], 10) } : null
   const mode = forcedMode || 'group'
   const finalPayer = forcedMode ? forcedPayer : payerId
-  // moneda (default ARS; sin conversión)
-  let currency = 'ARS'
-  if (/\b(usd|u\$s|d[oó]lar|d[oó]lares)\b/.test(t)) currency = 'USD'
-  else if (/\b(clp|peso chileno|pesos chilenos)\b/.test(t)) currency = 'CLP'
-  const exp = { amount, categoryId: cat.id, catName: cat.name, catIcon: cat.icon, payerId: finalPayer, cuotas, split, mode, currency }
+  const exp = { amount, categoryId: cat.id, catName: cat.name, catIcon: cat.icon, payerId: finalPayer, cuotas, split, mode, currency, date }
   if (!finalPayer) {
     delete exp.payerId
     return { kind: 'ambiguous', exp }
