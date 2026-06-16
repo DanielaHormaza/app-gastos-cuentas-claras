@@ -64,6 +64,12 @@ export function compute(state, gid) {
   ledger.forEach((e) => {
     if (e.future) return
     const cur = e.currency || 'ARS'
+    if (e.kind === 'transfer') {
+      // pago/transferencia: salda deuda, no es consumo
+      if (e.to === 'dani') add(cur, -e.amount)
+      if (e.from === 'dani') add(cur, e.amount)
+      return
+    }
     const share = expShare(e, daniPct)
     if (share === null) return
     if (e.payerId === 'dani') add(cur, e.amount * (1 - share))
@@ -163,8 +169,9 @@ export function monthLongLabel(key) { return MES_LONG[Number(key.slice(5, 7)) - 
 
 // Serie mensual real (últimos 6 meses terminando en el mes actual).
 // El gráfico totaliza ARS (no se mezclan monedas). methods = desglose por medio.
-export function buildHistory(state, gid, catFilter = null) {
-  const led = (state.ledgers[gid] || []).filter((e) => !e.future && (!catFilter || e.categoryId === catFilter))
+export function buildHistory(state, gid, catFilter = []) {
+  const showTransfer = catFilter && catFilter.length > 0 && catFilter.includes('transfer')
+  const led = (state.ledgers[gid] || []).filter((e) => !e.future && catMatch(catFilter, e) && (e.kind !== 'transfer' || showTransfer))
   const cur = monthKeyOf(todayISO())
   const [y, m] = cur.split('-').map(Number)
   const keys = []
@@ -230,34 +237,62 @@ export function groupCategories(state, gid) {
   return state.categories.filter((c) => set.has(c.id))
 }
 
-// Detalle de un mes para el desplegable de históricos: totales y "tu parte"
-// por moneda + items (último agregado primero). catFilter = id de categoría o null.
-export function monthData(state, gid, key, catFilter = null) {
-  const daniPct = (state.splits[gid] || {}).dani || 0
+// ¿La entrada pasa el filtro de categorías? catFilter = array de ids ([] = todas).
+export function catMatch(catFilter, e) {
+  return !catFilter || catFilter.length === 0 || catFilter.includes(e.categoryId)
+}
+
+// Fila de movimiento para mostrar (gasto o transferencia). withDate: usar fecha en el subtítulo.
+export function rowFor(state, gid, e, daniPct, opts = {}) {
   const g = state.groups[gid]
+  const cur = e.currency || 'ARS'
+  if (e.kind === 'transfer') {
+    const from = memberById(state, gid, e.from)
+    const to = memberById(state, gid, e.to)
+    return {
+      id: e.id, entry: e, isTransfer: true, catIcon: '🔁',
+      title: e.to === 'dani' ? from.short + ' te pagó' : 'Le pagaste a ' + to.short,
+      sub: 'Transferencia · ' + fmtDateFull(e.date),
+      avatarColor: e.from === 'dani' ? '#7C3AED' : from.color, avatarInitial: e.from === 'dani' ? 'D' : from.initial,
+      amountText: fmt(e.amount, cur), impText: 'saldó', impColor: '#0E9F86',
+    }
+  }
+  const cat = catById(state, e.categoryId)
+  const payer = memberById(state, gid, e.payerId)
+  const meth = state.methods.find((x) => x.id === e.methodId)
+  const imp = impactOf(state, gid, e, daniPct)
+  const tail = opts.withDate ? fmtDateFull(e.date) : e.time || fmtDateFull(e.date)
+  return {
+    id: e.id, entry: e, catIcon: cat.icon, title: e.desc || cat.name,
+    sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + tail : 'Pagó ' + payer.short + ' · ' + tail,
+    avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
+    amountText: fmt(e.amount, cur), impText: imp.text, impColor: imp.color,
+  }
+}
+
+// Detalle de un mes: gastado y "tu parte" por moneda + transferencias + items.
+// catFilter = array de ids ([] = todas). Las transferencias no suman al gasto.
+export function monthData(state, gid, key, catFilter = []) {
+  const daniPct = (state.splits[gid] || {}).dani || 0
   const rows = (state.ledgers[gid] || [])
     .map((e, idx) => ({ e, idx }))
-    .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key && (!catFilter || x.e.categoryId === catFilter))
+    .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key && catMatch(catFilter, x.e))
     .sort((a, b) => (a.e.date < b.e.date ? 1 : a.e.date > b.e.date ? -1 : b.idx - a.idx))
   const totals = {}
   const tuParte = {}
+  const transfers = {}
   const items = rows.map(({ e }) => {
     const cur = e.currency || 'ARS'
-    totals[cur] = (totals[cur] || 0) + e.amount
-    const consumo = e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : daniPct / 100
-    tuParte[cur] = (tuParte[cur] || 0) + e.amount * consumo
-    const cat = catById(state, e.categoryId)
-    const payer = memberById(state, gid, e.payerId)
-    const meth = state.methods.find((x) => x.id === e.methodId)
-    const imp = impactOf(state, gid, e, daniPct)
-    return {
-      id: e.id, entry: e, catIcon: cat.icon, title: e.desc || cat.name,
-      sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + fmtDateFull(e.date) : 'Pagó ' + payer.short + ' · ' + fmtDateFull(e.date),
-      avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
-      amountText: fmt(e.amount, cur), impText: imp.text, impColor: imp.color,
+    if (e.kind === 'transfer') {
+      transfers[cur] = (transfers[cur] || 0) + e.amount
+    } else {
+      totals[cur] = (totals[cur] || 0) + e.amount
+      const consumo = e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : daniPct / 100
+      tuParte[cur] = (tuParte[cur] || 0) + e.amount * consumo
     }
+    return rowFor(state, gid, e, daniPct, { withDate: true })
   })
-  return { totals, tuParte, items }
+  return { totals, tuParte, transfers, items }
 }
 
 // Meses con movimientos (sin futuros), del más nuevo al más viejo.
@@ -276,17 +311,26 @@ export function buildCsv(state, gid, fromKey, toKey) {
     .filter((e) => { const k = monthKeyOf(e.date); return (!fromKey || k >= fromKey) && (!toKey || k <= toKey) })
     .slice()
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-  const head = ['Fecha', 'Mes', 'Descripción', 'Categoría', 'Monto', 'Moneda', 'Pagó', 'División', 'Tu parte', 'Impacto']
+  const head = ['Fecha', 'Mes', 'Tipo', 'Descripción', 'Categoría', 'Monto', 'Moneda', 'Pagó', 'División', 'Tu parte', 'Impacto']
   const esc = (s) => { s = String(s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s }
   const lines = [head.join(',')]
   rows.forEach((e) => {
+    const fecha = fmtDateFull(e.date)
+    const mes = monthKeyOf(e.date)
+    const cur = e.currency || 'ARS'
+    if (e.kind === 'transfer') {
+      const from = memberById(state, gid, e.from)
+      const to = memberById(state, gid, e.to)
+      lines.push([fecha, mes, 'Transferencia', from.short + ' → ' + to.short, 'Pagos y transferencias', e.amount, cur, from.short, '—', 0, from.short + ' le pagó a ' + to.short].map(esc).join(','))
+      return
+    }
     const cat = catById(state, e.categoryId)
     const payer = memberById(state, gid, e.payerId)
     const consumo = e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : daniPct / 100
     const tuParte = Math.round(e.amount * consumo * 100) / 100
     const divLabel = e.mode === 'settled' ? 'Pagaron ambos' : e.mode === 'full_mine' ? 'Todo Dani' : e.mode === 'full_theirs' ? 'Todo ' + other.short : 'Dani ' + daniPct + '% / ' + other.short + ' ' + (100 - daniPct) + '%'
     const imp = impactOf(state, gid, e, daniPct)
-    lines.push([fmtDateFull(e.date), monthKeyOf(e.date), e.desc || cat.name, cat.name, e.amount, e.currency || 'ARS', payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
+    lines.push([fecha, mes, 'Gasto', e.desc || cat.name, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
   })
   return '﻿' + lines.join('\n') // BOM para que Excel respete acentos
 }

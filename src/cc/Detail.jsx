@@ -61,8 +61,9 @@ export function MonthDetail({ s, actions }) {
   const g = s.groups[gid]
   const key = s.monthKey || '2026-06'
   const cats = groupCategories(s, gid)
-  const { totals, tuParte, items } = monthData(s, gid, key, s.catFilter)
+  const { totals, tuParte, transfers, items } = monthData(s, gid, key, s.catFilter)
   const curs = CURRENCIES.filter((cu) => totals[cu])
+  const trCurs = CURRENCIES.filter((cu) => transfers[cu])
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#F4F6FA', animation: 'ccIn .26s ease' }}>
@@ -72,8 +73,9 @@ export function MonthDetail({ s, actions }) {
 
         <div style={{ borderRadius: 16, padding: '14px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>Total del mes</div>
-            {!g.personal && <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginTop: 2 }}>tu parte {curs.length ? curs.map((cu) => fmt(tuParte[cu], cu)).join(' · ') : fmt(0)}</div>}
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>Total gastado</div>
+            {!g.personal && curs.length > 0 && <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginTop: 2 }}>tu parte {curs.map((cu) => fmt(tuParte[cu], cu)).join(' · ')}</div>}
+            {trCurs.length > 0 && <div style={{ fontSize: 11, color: '#0E9F86', fontWeight: 800, marginTop: 2 }}>🔁 saldado {trCurs.map((cu) => fmt(transfers[cu], cu)).join(' · ')}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
             {curs.length ? curs.map((cu) => <div key={cu} className="num" style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.02em', color: '#0B1220', lineHeight: 1.2 }}>{fmt(totals[cu], cu)}</div>) : <div className="num" style={{ fontWeight: 700, fontSize: 20, color: '#0B1220' }}>{fmt(0)}</div>}
@@ -96,7 +98,7 @@ export function MonthDetail({ s, actions }) {
         {items.length === 0 && (
           <div style={{ textAlign: 'center', padding: '30px 16px', color: '#B6BFCC' }}>
             <div style={{ fontSize: 30, marginBottom: 8 }}>🧾</div>
-            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Sin movimientos{s.catFilter ? ' de esa categoría' : ''} en este mes.</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Sin movimientos{s.catFilter.length ? ' de esa categoría' : ''} en este mes.</div>
           </div>
         )}
       </div>

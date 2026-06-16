@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, impactOf } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
 import { Futuros, Historicos } from './GroupViews'
@@ -387,18 +387,7 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
     .forEach((e) => {
       const key = (dayLabel(e.date) + ' · ' + fmtDateFull(e.date)).toUpperCase()
       if (!byDay[key]) { byDay[key] = []; order.push(key) }
-      const cat = catById(s, e.categoryId)
-      const payer = memberById(s, gid, e.payerId)
-      const cur = e.currency || 'ARS'
-      const meth = s.methods.find((x) => x.id === e.methodId)
-      const imp = impactOf(s, gid, e, c.daniPct)
-      byDay[key].push({
-        entry: e, avatarColor: payer.color, avatarInitial: payer.initial, catIcon: cat.icon, title: e.desc || cat.name,
-        sub: g.personal ? (meth ? meth.name : 'Sin medio') + (e.time ? ' · ' + e.time : '') : 'Pagó ' + payer.short + (e.time ? ' · ' + e.time : ''),
-        amountText: fmt(e.amount, cur),
-        implText: imp.text,
-        implColor: imp.color,
-      })
+      byDay[key].push(rowFor(s, gid, e, c.daniPct))
     })
 
   return (
@@ -426,7 +415,7 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{it.amountText}</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: it.implColor }}>{it.implText}</div>
+                  {it.impText && <div style={{ fontSize: 11, fontWeight: 800, color: it.impColor }}>{it.impText}</div>}
                 </div>
               </div>
             ))}

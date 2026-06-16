@@ -46,7 +46,7 @@ export function makeInitialState() {
     groupQuery: '',
     expandedMonths: { 0: true },
     histSel: {},
-    catFilter: null, // filtro de categoría en históricos / detalle de mes
+    catFilter: [], // categorías seleccionadas en el filtro ([] = todas)
     newGroup: { name: '', desc: '', members: [], memberName: '', invited: false },
     // config de grupo
     addingMember: false,
@@ -89,6 +89,7 @@ export function makeInitialState() {
       { id: 'salud', icon: '💊', name: 'Salud' },
       { id: 'otro', icon: '🏷️', name: 'Otro' },
       { id: 'inicial', icon: '⚖️', name: 'Saldo inicial' },
+      { id: 'transfer', icon: '🔁', name: 'Pagos y transferencias' },
     ],
     groups: {
       pareja: {

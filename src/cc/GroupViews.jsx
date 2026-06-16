@@ -145,22 +145,26 @@ export function Historicos({ s, actions }) {
 
       <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '4px 4px 0' }}>MOVIMIENTOS POR MES</div>
       {monthKeys.map((k) => {
-        const { totals, tuParte, items } = monthData(s, gid, k, catFilter)
-        if (catFilter && items.length === 0) return null
-        const curs = CURRENCIES.filter((cu) => totals[cu])
+        const { totals, tuParte, transfers, items } = monthData(s, gid, k, catFilter)
+        if (catFilter.length && items.length === 0) return null
+        const spendCurs = CURRENCIES.filter((cu) => totals[cu])
+        const trCurs = CURRENCIES.filter((cu) => transfers[cu])
+        const mainCurs = spendCurs.length ? spendCurs : trCurs
+        const mainObj = spendCurs.length ? totals : transfers
+        const isTr = !spendCurs.length && trCurs.length
         return (
           <div key={k} onClick={() => actions.openMonthDetail(k)} style={{ background: '#fff', borderRadius: 18, boxShadow: cardShadow, border: '1px solid #EEF1F6', display: 'flex', alignItems: 'center', gap: 11, padding: '14px 14px', cursor: 'pointer' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{monthLongLabel(k)}</div>
-              {!g.personal && (
+              {!g.personal && spendCurs.length > 0 && (
                 <div style={{ fontSize: 10.5, color: '#94A3B8', fontWeight: 700, marginTop: 1 }}>
-                  tu parte {curs.length ? curs.map((cu) => fmt(tuParte[cu], cu)).join(' · ') : fmt(0)}
+                  tu parte {spendCurs.map((cu) => fmt(tuParte[cu], cu)).join(' · ')}
                 </div>
               )}
             </div>
             <div style={{ textAlign: 'right' }}>
-              {curs.length ? curs.map((cu) => (
-                <div key={cu} className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220', lineHeight: 1.25 }}>{fmt(totals[cu], cu)}</div>
+              {mainCurs.length ? mainCurs.map((cu) => (
+                <div key={cu} className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220', lineHeight: 1.25 }}>{isTr ? '🔁 ' : ''}{fmt(mainObj[cu], cu)}</div>
               )) : <div className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220' }}>{fmt(0)}</div>}
             </div>
             <Chevron size={16} color="#C3CCDA" />

@@ -24,7 +24,7 @@ function useDesktop() {
 }
 
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
-const KEY = 'cuentas-claras:v3'
+const KEY = 'cuentas-claras:v4'
 const DATA_KEYS = ['groups', 'splits', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'histSel']
 
 function load() {
@@ -84,16 +84,17 @@ export default function App() {
         const g = prev.groupId
         const valid = list.filter((p) => p.amount > 0)
         if (!valid.length) return { settleOpen: false }
-        const pays = [...(prev.payments[g] || []), ...valid]
         const tm = nowTime()
+        const base = Date.now()
+        const entries = valid.map((p, i) => ({ id: 'tr' + (base + i), date: todayISO(), time: tm, kind: 'transfer', categoryId: 'transfer', from: p.from, to: p.to, amount: p.amount, currency: p.currency || 'ARS' }))
         const msgs = valid.map((p, i) => {
           const cur = p.currency || 'ARS'
           const txt = p.to === 'dani'
             ? memberById(prev, g, p.from).short + ' te pagó ' + fmt(p.amount, cur) + '.'
             : 'Le pagaste ' + fmt(p.amount, cur) + ' a ' + memberById(prev, g, p.to).short + '.'
-          return { id: 'pay' + (Date.now() + i), role: 'app', kind: 'text', text: '✅ Registré el pago: ' + txt, time: tm }
+          return { id: 'paym' + (base + i), role: 'app', kind: 'text', text: '✅ Registré el pago: ' + txt, time: tm }
         })
-        return { payments: { ...prev.payments, [g]: pays }, threads: { ...prev.threads, [g]: [...(prev.threads[g] || []), ...msgs] }, settleOpen: false }
+        return { ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), ...entries] }, threads: { ...prev.threads, [g]: [...(prev.threads[g] || []), ...msgs] }, settleOpen: false }
       }),
 
     // ---- chat ----
@@ -175,8 +176,8 @@ export default function App() {
         const g = prev.groupId
         const msg = (prev.threads[g] || []).find((m) => m.id === id)
         const ex = msg.exp
-        const pays = [...(prev.payments[g] || []), { from: ex.from, to: ex.to, amount: ex.amount }]
-        return { payments: { ...prev.payments, [g]: pays }, threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === id ? { ...m, kind: 'savedPayment' } : m)) } }
+        const entry = { id: 'tr' + Date.now(), date: todayISO(), time: nowTime(), kind: 'transfer', categoryId: 'transfer', from: ex.from, to: ex.to, amount: ex.amount, currency: ex.currency || 'ARS' }
+        return { ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), entry] }, threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === id ? { ...m, kind: 'savedPayment' } : m)) } }
       }),
     corYes: (id) =>
       set((prev) => {
