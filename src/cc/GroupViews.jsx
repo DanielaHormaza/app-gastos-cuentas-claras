@@ -5,7 +5,7 @@ import { METHOD_COLORS } from './initialState'
 import { Chevron, ChevronDown } from './icons'
 import { Filters } from './CategoryFilter'
 
-function downloadCsv(text, name) {
+export function downloadCsv(text, name) {
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

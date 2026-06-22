@@ -1,4 +1,5 @@
 import { Close, Plus, Archive } from './icons'
+import { fmtDateFull } from './dates'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
 const sectionCard = { background: '#fff', borderRadius: 16, padding: 12, boxShadow: cardShadow }
@@ -8,6 +9,7 @@ export default function Config({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const sp = s.splits[gid] || {}
+  const meta = (s.splitMeta && s.splitMeta[gid]) || {}
 
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 14, background: '#F4F6FA', display: 'flex', flexDirection: 'column', animation: 'ccScr .26s cubic-bezier(.22,1,.36,1)' }}>
@@ -37,7 +39,7 @@ export default function Config({ s, actions }) {
             <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
               <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>{m.initial}</div>
               <span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#0B1220' }}>{m.name}</span>
-              {m.id === 'dani' && <span style={{ fontSize: 10, fontWeight: 800, color: '#7C3AED', background: '#F1ECFD', padding: '3px 7px', borderRadius: 999 }}>ADMIN</span>}
+              {m.id === (s.me || 'dani') && <span style={{ fontSize: 10, fontWeight: 800, color: '#7C3AED', background: '#F1ECFD', padding: '3px 7px', borderRadius: 999 }}>VOS</span>}
             </div>
           ))}
           {s.addingMember ? (
@@ -67,11 +69,17 @@ export default function Config({ s, actions }) {
               <span style={{ flex: 1, fontWeight: 700, fontSize: 13, color: '#334155' }}>{m.name}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <div onClick={() => actions.adjustSplit(m.id, -5)} style={stepper}>−</div>
-                <span className="num" style={{ fontWeight: 700, fontSize: 14, width: 38, textAlign: 'center' }}>{(sp[m.id] || 0)}%</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 3, border: '1.5px solid #E2E8F0', borderRadius: 10, padding: '5px 8px' }}>
+                  <input value={sp[m.id] || 0} onChange={(e) => actions.setSplitPct(m.id, e.target.value)} inputMode="numeric" className="num" style={{ width: 26, border: 'none', outline: 'none', textAlign: 'right', fontWeight: 700, fontSize: 14, color: '#0B1220', background: 'transparent', fontFamily: 'inherit' }} />
+                  <span className="num" style={{ fontWeight: 700, fontSize: 14, color: '#94A3B8' }}>%</span>
+                </div>
                 <div onClick={() => actions.adjustSplit(m.id, 5)} style={stepper}>+</div>
               </div>
             </div>
           ))}
+          <div style={{ fontSize: 11, color: '#B6BFCC', fontWeight: 700, marginTop: 8 }}>
+            {meta.by ? 'Modificado por ' + meta.by + ' · ' + fmtDateFull(meta.at) : 'Sin cambios todavía · rige el reparto inicial'}
+          </div>
         </div>
 
         {/* acciones */}

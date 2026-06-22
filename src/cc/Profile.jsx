@@ -32,7 +32,7 @@ export default function Profile({ s, actions }) {
         <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, overflow: 'hidden', marginBottom: 18, boxShadow: cardShadow }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', borderBottom: '1px solid #F1F4F9' }}>
             <span style={{ fontSize: 16 }}>✉️</span>
-            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Email</div><div style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{prof.email}</div></div>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Email</div><div style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{s.authEmail || prof.email}</div></div>
             <span style={{ fontSize: 10, fontWeight: 800, color: '#0E9F86', background: '#EAF8F3', padding: '3px 8px', borderRadius: 999 }}>Verificado</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px' }}>
@@ -73,7 +73,7 @@ export default function Profile({ s, actions }) {
           </div>
         </div>
 
-        <div onClick={actions.backToList} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 13, padding: 13, cursor: 'pointer' }}>
+        <div onClick={actions.signOut} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 13, padding: 13, cursor: 'pointer' }}>
           <span style={{ fontWeight: 800, fontSize: 14, color: '#E11D5B' }}>Cerrar sesión</span>
         </div>
       </div>

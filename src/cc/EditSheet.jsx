@@ -23,7 +23,7 @@ export default function EditSheet({ s, actions }) {
         {panel === 'cat' && <CatPanel s={s} dr={dr} actions={actions} />}
         {panel === 'payer' && <PayerPanel s={s} g={g} dr={dr} actions={actions} />}
         {panel === 'method' && <MethodPanel s={s} dr={dr} actions={actions} />}
-        {panel === 'split' && <SplitPanel dr={dr} c={c} actions={actions} />}
+        {panel === 'split' && <SplitPanel dr={dr} c={c} me={(g.members.find((m) => m.id === (s.me || 'dani')) || {}).short || 'Vos'} actions={actions} />}
       </div>
     </>
   )
@@ -33,7 +33,8 @@ function Fields({ s, g, dr, c, actions }) {
   const cat = catById(s, dr.categoryId)
   const payer = memberById(s, g.id, dr.payerId)
   const meth = s.methods.find((x) => x.id === dr.methodId)
-  const splitLabels = { group: `Según el grupo (${c.daniPct}% vos)`, full_mine: 'Lo debo todo yo', full_theirs: 'Lo deben todo', settled: 'Pagamos ambos (saldado)' }
+  const me = (g.members.find((m) => m.id === (s.me || 'dani')) || {}).short || 'Vos'
+  const splitLabels = { group: `Según el grupo (${c.daniPct}% ${me})`, full_mine: 'Lo debo todo yo', full_theirs: 'Lo deben todo', settled: 'Pagamos ambos (saldado)' }
   return (
     <div style={{ animation: 'ccFade .15s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -189,9 +190,9 @@ function MethodPanel({ s, dr, actions }) {
   )
 }
 
-function SplitPanel({ dr, c, actions }) {
+function SplitPanel({ dr, c, me, actions }) {
   const opts = [
-    { k: 'group', label: `Según el grupo (${c.daniPct}% vos)` },
+    { k: 'group', label: `Según el grupo (${c.daniPct}% ${me})` },
     { k: 'full_mine', label: 'Lo debo todo yo' },
     { k: 'full_theirs', label: 'Lo deben todo' },
     { k: 'settled', label: 'Pagamos ambos (saldado)' },

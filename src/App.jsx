@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
 import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById } from './cc/logic'
 import { todayISO, nowTime } from './cc/dates'
@@ -10,6 +10,12 @@ import Archived from './cc/Archived'
 import NewGroup from './cc/NewGroup'
 import { MethodDetail, MonthDetail } from './cc/Detail'
 import { Logo } from './cc/icons'
+import Login from './Login'
+import { supabase } from './supabase'
+import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit } from './cloud'
+
+// Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
+const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null)].join('|')
 
 // Layout de dos paneles a partir de ~900px de ancho.
 function useDesktop() {
@@ -25,21 +31,100 @@ function useDesktop() {
 
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
 const KEY = 'cuentas-claras:v4'
-const DATA_KEYS = ['groups', 'splits', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'histSel']
+const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'histSel']
 
 function load() {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return { ...makeInitialState(), ...JSON.parse(raw) }
+    if (raw) return migrate({ ...makeInitialState(), ...JSON.parse(raw) })
   } catch {
     /* dato corrupto: se ignora */
   }
   return makeInitialState()
 }
 
+// Asegura que el historial de reparto exista para cada grupo (estado guardado previo a esta feature).
+function migrate(s) {
+  s.splitLog = s.splitLog || {}
+  s.splitMeta = s.splitMeta || {}
+  Object.keys(s.splits || {}).forEach((gid) => {
+    if (!s.splitLog[gid]) s.splitLog[gid] = []
+    if (!s.splitMeta[gid]) s.splitMeta[gid] = { from: '2000-01-01', at: null, by: null }
+  })
+  return s
+}
+
 export default function App() {
   const [s, setS] = useState(load)
   const desktop = useDesktop()
+  // session: undefined = cargando, null = sin sesión (mostrar login), objeto = logueado
+  const [session, setSession] = useState(undefined)
+  const [dataReady, setDataReady] = useState(false)
+  const [dataErr, setDataErr] = useState(null)
+
+  useEffect(() => {
+    const apply = (sess) => {
+      setSession(sess)
+      setS((prev) => ({ ...prev, authEmail: sess?.user?.email || null }))
+      if (sess?.user) {
+        // crear/actualizar perfil (no bloqueante; el claim va en el efecto de carga, secuenciado)
+        supabase.from('profiles').upsert({ id: sess.user.id, name: (sess.user.email || '').split('@')[0] }).then(({ error }) => error && console.error('[profile]', error.message))
+      }
+    }
+    supabase.auth.getSession().then(({ data }) => apply(data.session)).catch(() => apply(null))
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => apply(sess))
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  // cargar los datos desde la nube cuando hay sesión (primero claim → recién ahí soy miembro y RLS me deja leer)
+  useEffect(() => {
+    if (!session?.user) { setDataReady(false); return }
+    let cancelled = false
+    setDataErr(null)
+    setDataReady(false)
+    ;(async () => {
+      try {
+        const { error: claimErr } = await supabase.rpc('claim_my_slots')
+        if (claimErr) console.error('[claim_my_slots]', claimErr.message)
+        const cloud = await loadCloudState(session.user.id)
+        // conservar el historial de chat ya guardado (por dispositivo); intro solo si no hay
+        if (!cancelled) {
+          setS((prev) => {
+            const threads = {}
+            for (const g in cloud.threads) threads[g] = (prev.threads && prev.threads[g]) || cloud.threads[g]
+            return { ...cloud, threads }
+          })
+          setDataReady(true)
+        }
+      } catch (e) {
+        if (!cancelled) { console.error('[loadCloudState]', e.message); setDataErr(e.message) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [session?.user?.id])
+
+  // espejo de movimientos → Supabase: detecta altas/ediciones/bajas y las sincroniza
+  const ledSyncRef = useRef(null)
+  useEffect(() => {
+    if (!dataReady) { ledSyncRef.current = null; return }
+    const cur = {}
+    for (const gid in s.ledgers) for (const e of s.ledgers[gid]) cur[e.id] = { e, gid, fp: expFingerprint(e) }
+    const prev = ledSyncRef.current
+    if (prev === null) { ledSyncRef.current = cur; return } // primera vez tras cargar: solo snapshot
+    for (const id in cur) if (!prev[id] || prev[id].fp !== cur[id].fp) cloudUpsertExpense(cur[id].e, cur[id].gid)
+    for (const id in prev) if (!cur[id]) cloudDeleteExpense(id)
+    ledSyncRef.current = cur
+  }, [s.ledgers, dataReady])
+
+  // espejo de categorías nuevas → Supabase
+  const catSyncRef = useRef(null)
+  useEffect(() => {
+    if (!dataReady) { catSyncRef.current = null; return }
+    const prev = catSyncRef.current
+    if (prev === null) { catSyncRef.current = new Set(s.categories.map((c) => c.id)); return }
+    for (const c of s.categories) if (!prev.has(c.id)) cloudUpsertCategory(c)
+    catSyncRef.current = new Set(s.categories.map((c) => c.id))
+  }, [s.categories, dataReady])
 
   // Persiste solo los datos (no el estado de navegación transitorio).
   useEffect(() => {
@@ -57,8 +142,49 @@ export default function App() {
   const openEdit = (e) =>
     set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS', createdBy: e.createdBy, editedBy: e.editedBy, editedAt: e.editedAt }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
 
+  // Aplica un nuevo reparto registrando el régimen anterior "hasta hoy": el nuevo % rige desde hoy.
+  // Editar varias veces el mismo día NO crea regímenes extra (sólo el primero del día archiva el anterior).
+  const commitSplit = (newShares) => {
+    const today = todayISO()
+    set((prev) => {
+      const meta = (prev.splitMeta && prev.splitMeta[gid]) || { from: '2000-01-01', at: null, by: null }
+      const log = (prev.splitLog && prev.splitLog[gid]) || []
+      const newLog = meta.from !== today
+        ? [...log, { until: today, shares: prev.splits[gid] || {} }].sort((a, b) => (a.until < b.until ? -1 : 1))
+        : log
+      return {
+        splits: { ...prev.splits, [gid]: newShares },
+        splitLog: { ...prev.splitLog, [gid]: newLog },
+        splitMeta: { ...prev.splitMeta, [gid]: { from: today, at: today, by: prev.profile.name } },
+      }
+    })
+    cloudSaveSplit(gid, today, newShares, s.profile.name, new Date().toISOString())
+  }
+
+  // Reparto manual: fijás el % de uno y el resto se reparte entre los demás (proporcional, o equitativo si están en 0).
+  const sharesFrom = (id, value) => {
+    const members = s.groups[gid].members
+    const cur = s.splits[gid] || {}
+    const v = Math.max(0, Math.min(100, value))
+    const others = members.filter((m) => m.id !== id)
+    const rest = 100 - v
+    const shares = { [id]: v }
+    if (others.length === 1) shares[others[0].id] = rest
+    else {
+      const sum = others.reduce((a, m) => a + (cur[m.id] || 0), 0)
+      let acc = 0
+      others.forEach((m, i) => {
+        const val = i === others.length - 1 ? rest - acc : sum > 0 ? Math.round((rest * (cur[m.id] || 0)) / sum) : Math.floor(rest / others.length)
+        shares[m.id] = val
+        acc += val
+      })
+    }
+    return shares
+  }
+
   const actions = {
     // ---- navegación ----
+    signOut: () => supabase.auth.signOut(),
     openProfile: () => set({ screen: 'profile', menuOpen: false }),
     openPersonal: () => set({ screen: 'chat', groupId: 'personal', view: 'chat', menuOpen: false, configOpen: false }),
     openGroup: (id) => set({ screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false }),
@@ -66,10 +192,11 @@ export default function App() {
     openArchived: () => set({ screen: 'archived', groupQuery: '' }),
     backToList: () => set({ screen: 'list' }),
     back: () =>
-      set((prev) => ({
-        screen: prev.archived[prev.groupId] ? 'archived' : 'list',
-        menuOpen: false, configOpen: false, view: 'chat', editId: null, draft: null,
-      })),
+      set((prev) => {
+        // Desde una sub-vista (movimientos, históricos, etc.) volvés al chat; desde el chat, a la lista.
+        if (prev.view !== 'chat') return { view: 'chat', menuOpen: false, configOpen: false, editId: null, draft: null }
+        return { screen: prev.archived[prev.groupId] ? 'archived' : 'list', menuOpen: false, configOpen: false, view: 'chat', editId: null, draft: null }
+      }),
     toggleMenu: () => set((prev) => ({ menuOpen: !prev.menuOpen })),
     closeMenu: () => set({ menuOpen: false }),
     goView: (view) => set({ view, menuOpen: false }),
@@ -89,7 +216,7 @@ export default function App() {
         const entries = valid.map((p, i) => ({ id: 'tr' + (base + i), date: todayISO(), time: tm, kind: 'transfer', categoryId: 'transfer', from: p.from, to: p.to, amount: p.amount, currency: p.currency || 'ARS', createdBy: prev.profile.name }))
         const msgs = valid.map((p, i) => {
           const cur = p.currency || 'ARS'
-          const txt = p.to === 'dani'
+          const txt = p.to === (prev.me || 'dani')
             ? memberById(prev, g, p.from).short + ' te pagó ' + fmt(p.amount, cur) + '.'
             : 'Le pagaste ' + fmt(p.amount, cur) + ' a ' + memberById(prev, g, p.to).short + '.'
           return { id: 'paym' + (base + i), role: 'app', kind: 'text', text: '✅ Registré el pago: ' + txt, time: tm }
@@ -166,6 +293,37 @@ export default function App() {
       const e = (s.ledgers[gid] || []).find((x) => x.id === (msg && msg.expId))
       if (e) openEdit(e)
     },
+    // "Editar" en la tarjeta interpretada: guarda el gasto y abre la hoja de edición pre-cargada.
+    editInterp: (id) =>
+      set((prev) => {
+        const g = prev.groupId
+        const thread = prev.threads[g] || []
+        const msg = thread.find((m) => m.id === id)
+        if (!msg || !msg.exp) return {}
+        const exp = msg.exp
+        let cats = prev.categories
+        let catId = exp.categoryId
+        if (!catId) {
+          catId = 'c' + Date.now()
+          cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
+        }
+        const expId = 'e' + Date.now()
+        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
+        let splits = prev.splits
+        if (exp.split) {
+          const ids = Object.keys(prev.splits[g] || {})
+          if (ids.length >= 2) splits = { ...splits, [g]: { [ids[0]]: exp.split.a, [ids[1]]: exp.split.b } }
+        }
+        return {
+          categories: cats,
+          ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), entry] },
+          splits,
+          threads: { ...prev.threads, [g]: thread.map((m) => (m.id === id ? { ...m, kind: 'saved', expId, exp: { ...exp, categoryId: catId } } : m)) },
+          editId: expId,
+          draft: { categoryId: catId, amount: entry.amount, payerId: entry.payerId, methodId: null, mode: entry.mode, currency: entry.currency, createdBy: entry.createdBy },
+          editPanel: null, catQuery: '', payerQuery: '', methodQuery: '',
+        }
+      }),
     editDup: (id) => {
       const msg = (s.threads[gid] || []).find((m) => m.id === id)
       const ex = msg && msg.exp
@@ -283,8 +441,9 @@ export default function App() {
         const splits = setEqualSplit({ ...prev.splits[gid], [id]: 0 })
         return { groups: { ...prev.groups, [gid]: { ...g, members: [...g.members, member] } }, splits: { ...prev.splits, [gid]: splits }, addingMember: false, newMemberName: '' }
       }),
-    onEqual: () => set((prev) => ({ splits: { ...prev.splits, [gid]: setEqualSplit(prev.splits[gid]) } })),
-    adjustSplit: (id, delta) => set((prev) => ({ splits: { ...prev.splits, [gid]: adjustSplit(prev.splits[gid], id, delta) } })),
+    onEqual: () => commitSplit(setEqualSplit(s.splits[gid])),
+    adjustSplit: (id, delta) => commitSplit(adjustSplit(s.splits[gid], id, delta)),
+    setSplitPct: (id, raw) => commitSplit(sharesFrom(id, parseInt((raw || '').replace(/\D/g, '') || '0', 10))),
     onArchive: () => set((prev) => ({ archived: { ...prev.archived, [gid]: true }, configOpen: false, screen: 'list', groupId: null, menuOpen: false })),
 
     // ---- perfil ----
@@ -375,6 +534,29 @@ export default function App() {
       {s.editId != null && <EditSheet s={s} actions={actions} />}
     </>
   )
+
+  // ---- gate de autenticación + carga de datos ----
+  const Splash = () => (
+    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e6e9f2' }}>
+      <div style={{ opacity: 0.4 }}><Logo size={56} /></div>
+    </div>
+  )
+  if (session === undefined) return <Splash />
+  if (!session) return <Login />
+  if (dataErr) {
+    return (
+      <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: '#e6e9f2', padding: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 34 }}>😕</div>
+        <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220' }}>No pudimos cargar tus datos</div>
+        <div style={{ fontSize: 13, color: '#64748B', fontWeight: 600, maxWidth: 300 }}>{dataErr}</div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+          <button onClick={() => window.location.reload()} style={{ border: 'none', background: '#7C3AED', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 13.5, padding: '10px 18px', borderRadius: 12, cursor: 'pointer' }}>Reintentar</button>
+          <button onClick={() => supabase.auth.signOut()} style={{ border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontFamily: 'inherit', fontWeight: 800, fontSize: 13.5, padding: '10px 18px', borderRadius: 12, cursor: 'pointer' }}>Cerrar sesión</button>
+        </div>
+      </div>
+    )
+  }
+  if (!dataReady) return <Splash />
 
   if (desktop) {
     return (

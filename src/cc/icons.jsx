@@ -19,8 +19,8 @@ export const Close = ({ size = 15, color = '#94A3B8', w = 2.6 }) => (
 export const Plus = ({ size = 20, color = '#94A3B8', w = 2.4 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><path d="M12 5v14M5 12h14" /></svg>
 )
-export const Send = ({ size = 20, color = '#fff', w = 2.4 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>
+export const Send = ({ size = 20, color = '#fff', w = 2.6 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><path d="M12 20V5M6 11l6-6 6 6" /></svg>
 )
 export const Search = ({ size = 17, color = '#94A3B8', w = 2.4 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>

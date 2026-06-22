@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { compute, fmt, CURRENCIES } from './logic'
 import { BRAND_GRADIENT } from './initialState'
-import { Close } from './icons'
+import { Close, Check } from './icons'
 
 /** Hoja para saldar cuentas: por cada moneda, quién le paga a quién y cuánto. */
 export default function SettleSheet({ s, actions }) {
@@ -16,18 +16,28 @@ export default function SettleSheet({ s, actions }) {
     return o
   })
   const setAmt = (cu, v) => setAmounts((a) => ({ ...a, [cu]: parseInt((v || '').replace(/\D/g, '') || '0', 10) }))
+  // tildado por moneda: lo destildado queda en gris y no se salda
+  const [on, setOn] = useState(() => {
+    const o = {}
+    curs.forEach((cu) => (o[cu] = true))
+    return o
+  })
+  const toggle = (cu) => setOn((p) => ({ ...p, [cu]: !p[cu] }))
+  const anyOn = curs.some((cu) => on[cu] && amounts[cu])
 
   const confirm = () => {
     const list = curs
       .map((cu) => {
         const amt = amounts[cu]
-        if (!amt) return null
+        if (!amt || !on[cu]) return null
         const net = c.nets[cu]
+        const me = s.me || 'dani'
         return net > 0
-          ? { from: other.id, to: 'dani', amount: amt, currency: cu }
-          : { from: 'dani', to: other.id, amount: amt, currency: cu }
+          ? { from: other.id, to: me, amount: amt, currency: cu }
+          : { from: me, to: other.id, amount: amt, currency: cu }
       })
       .filter(Boolean)
+    if (!list.length) return
     actions.settle(list)
   }
 
@@ -55,22 +65,28 @@ export default function SettleSheet({ s, actions }) {
             {curs.map((cu) => {
               const net = c.nets[cu]
               const dir = net > 0 ? other.short + ' te paga' : 'Le pagás a ' + other.short
+              const active = on[cu]
               return (
                 <div key={cu} style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.04em', marginBottom: 7 }}>
-                    <span style={{ width: 16, height: 16, borderRadius: 5, background: net > 0 ? other.color : '#7C3AED', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800 }}>{net > 0 ? other.initial : 'D'}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, fontWeight: 800, color: active ? '#94A3B8' : '#C3CCDA', letterSpacing: '0.04em', marginBottom: 7 }}>
+                    <span style={{ width: 16, height: 16, borderRadius: 5, background: !active ? '#CBD5E1' : net > 0 ? other.color : '#7C3AED', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800 }}>{net > 0 ? other.initial : 'D'}</span>
                     {dir.toUpperCase()} <span style={{ color: '#C3CCDA' }}>· {cu}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '6px 14px' }}>
-                    <span className="num" style={{ fontSize: 22, fontWeight: 700, color: '#94A3B8' }}>{cu === 'USD' ? 'US$' : cu === 'CLP' ? 'CLP$' : '$'}</span>
-                    <input value={amounts[cu]} onChange={(e) => setAmt(cu, e.target.value)} inputMode="numeric" className="num" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 24, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.01em', marginLeft: 4, width: '100%', background: 'transparent' }} />
-                    <span onClick={() => setAmt(cu, String(Math.round(Math.abs(net))))} style={{ fontSize: 11.5, fontWeight: 800, color: '#7C3AED', cursor: 'pointer', whiteSpace: 'nowrap' }}>Todo</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div onClick={() => toggle(cu)} style={{ width: 26, height: 26, flexShrink: 0, borderRadius: 8, border: active ? 'none' : '1.5px solid #CBD5E1', background: active ? BRAND_GRADIENT : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      {active && <Check size={15} color="#fff" />}
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '6px 14px', background: active ? '#fff' : '#F4F6FA', opacity: active ? 1 : 0.6 }}>
+                      <span className="num" style={{ fontSize: 22, fontWeight: 700, color: '#94A3B8' }}>{cu === 'USD' ? 'US$' : cu === 'CLP' ? 'CLP$' : '$'}</span>
+                      <input value={amounts[cu]} onChange={(e) => setAmt(cu, e.target.value)} disabled={!active} inputMode="numeric" className="num" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 24, fontWeight: 700, color: active ? '#0B1220' : '#94A3B8', letterSpacing: '-0.01em', marginLeft: 4, width: '100%', background: 'transparent' }} />
+                      {active && <span onClick={() => setAmt(cu, String(Math.round(Math.abs(net))))} style={{ fontSize: 11.5, fontWeight: 800, color: '#7C3AED', cursor: 'pointer', whiteSpace: 'nowrap' }}>Todo</span>}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginTop: 5 }}>Saldo: {fmt(Math.abs(net), cu)}</div>
+                  <div style={{ fontSize: 11, color: active ? '#94A3B8' : '#C3CCDA', fontWeight: 700, marginTop: 5, paddingLeft: 36 }}>{active ? 'Saldo: ' + fmt(Math.abs(net), cu) : 'No se salda'}</div>
                 </div>
               )
             })}
-            <button onClick={confirm} style={{ width: '100%', border: 'none', background: BRAND_GRADIENT, borderRadius: 13, padding: 14, fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#fff', cursor: 'pointer', boxShadow: '0 8px 20px -8px rgba(59,130,246,.6)' }}>Registrar pago</button>
+            <button onClick={confirm} disabled={!anyOn} style={{ width: '100%', border: 'none', background: anyOn ? BRAND_GRADIENT : '#CBD5E1', borderRadius: 13, padding: 14, fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#fff', cursor: anyOn ? 'pointer' : 'not-allowed', boxShadow: anyOn ? '0 8px 20px -8px rgba(59,130,246,.6)' : 'none' }}>Registrar pago</button>
           </>
         )}
       </div>

@@ -51,13 +51,39 @@ export function expShare(e, daniPct) {
   return daniPct / 100
 }
 
+// Reparto (%) vigente en una fecha. splitLog[gid] guarda regímenes pasados { until, shares }:
+// aplican a gastos con fecha < until. Sin historial → siempre el % actual de splits[gid].
+export function splitAt(state, gid, date) {
+  const log = state.splitLog && state.splitLog[gid]
+  if (log && log.length && date) {
+    for (const r of log) if (date < r.until) return r.shares // log ordenado por `until` ascendente
+  }
+  return state.splits[gid] || {}
+}
+// Mi % (del usuario logueado) vigente en una fecha.
+export function daniPctAt(state, gid, date) {
+  return (splitAt(state, gid, date) || {})[state.me || 'dani'] || 0
+}
+
+// Fracción del gasto que me toca a MÍ (usuario logueado). null = saldado.
+// 'mine'/'theirs' se anclan al primer miembro del grupo (creador histórico de los datos).
+export function myShare(state, gid, e) {
+  if (e.mode === 'settled') return null
+  const me = state.me || 'dani'
+  const anchor = ((state.groups[gid].members[0]) || {}).id
+  if (e.mode === 'full_mine') return me === anchor ? 1 : 0
+  if (e.mode === 'full_theirs') return me === anchor ? 0 : 1
+  return daniPctAt(state, gid, e.date) / 100
+}
+
 // Neto del grupo POR MONEDA (sin conversión). nets[cur] > 0 = te deben.
 // Excluye gastos futuros (cuotas por venir): no afectan el saldo hasta su mes.
 export function compute(state, gid) {
+  const me = state.me || 'dani'
   const sp = state.splits[gid] || {}
-  const daniPct = sp.dani || 0
+  const daniPct = sp[me] || 0 // "mi" % actual (el campo se llama daniPct por compatibilidad)
   const members = state.groups[gid].members
-  const others = members.filter((m) => m.id !== 'dani')
+  const others = members.filter((m) => m.id !== me)
   const ledger = state.ledgers[gid] || []
   const nets = {}
   const add = (cur, v) => { nets[cur] = (nets[cur] || 0) + v }
@@ -66,19 +92,19 @@ export function compute(state, gid) {
     const cur = e.currency || 'ARS'
     if (e.kind === 'transfer') {
       // pago/transferencia: salda deuda, no es consumo
-      if (e.to === 'dani') add(cur, -e.amount)
-      if (e.from === 'dani') add(cur, e.amount)
+      if (e.to === me) add(cur, -e.amount)
+      if (e.from === me) add(cur, e.amount)
       return
     }
-    const share = expShare(e, daniPct)
+    const share = myShare(state, gid, e)
     if (share === null) return
-    if (e.payerId === 'dani') add(cur, e.amount * (1 - share))
+    if (e.payerId === me) add(cur, e.amount * (1 - share))
     else add(cur, -e.amount * share)
   })
   ;(state.payments[gid] || []).forEach((p) => {
     const cur = p.currency || 'ARS'
-    if (p.to === 'dani') add(cur, -p.amount)
-    if (p.from === 'dani') add(cur, p.amount)
+    if (p.to === me) add(cur, -p.amount)
+    if (p.from === me) add(cur, p.amount)
   })
   return { nets, daniPct, members, others, other: others[0], twoPerson: members.length === 2 }
 }
@@ -123,10 +149,10 @@ export function descFor(state, gid, ex, daniPct) {
   const g = state.groups[gid]
   const cur = ex.currency || 'ARS'
   if (g.personal) return 'Lo pagaste vos'
-  const share = expShare(ex, daniPct)
+  const share = myShare(state, gid, ex)
   if (share === null) return 'Pagaron ambos · saldado'
   const payer = memberById(state, gid, ex.payerId)
-  if (ex.payerId === 'dani') {
+  if (ex.payerId === (state.me || 'dani')) {
     const o = ex.amount * (1 - share)
     return o > 0 ? 'Pagaste vos · te deben ' + fmt(o, cur) : 'Pagaste vos'
   }
@@ -219,12 +245,12 @@ export function impactOf(state, gid, e, daniPct) {
   const g = state.groups[gid]
   const cur = e.currency || 'ARS'
   if (g.personal) return { text: '', color: '#94A3B8' }
-  if (e.mode === 'settled') return { text: 'saldado', color: '#94A3B8' }
-  const share = expShare(e, daniPct)
-  if (e.payerId === 'dani') {
+  if (e.mode === 'settled') return { text: 'tu parte ' + fmt(e.amount * (daniPct / 100), cur) + ' · saldado', color: '#94A3B8' }
+  const share = myShare(state, gid, e)
+  if (e.payerId === (state.me || 'dani')) {
     const owed = e.amount * (1 - share)
     if (owed <= 0) return { text: 'sin deuda', color: '#94A3B8' }
-    return { text: (e.mode === 'full_theirs' ? 'prestaste ' : 'te deben ') + fmt(owed, cur), color: '#0E9F86' }
+    return { text: (share === 0 ? 'prestaste ' : 'te deben ') + fmt(owed, cur), color: '#0E9F86' }
   }
   const owe = e.amount * share
   if (owe <= 0) return { text: 'no participaste', color: '#94A3B8' }
@@ -253,20 +279,22 @@ export function textMatch(state, gid, e, q) {
 }
 
 // Fila de movimiento para mostrar (gasto o transferencia). withDate: usar fecha en el subtítulo.
-export function rowFor(state, gid, e, daniPct, opts = {}) {
+export function rowFor(state, gid, e, opts = {}) {
   const g = state.groups[gid]
   const cur = e.currency || 'ARS'
   if (e.kind === 'transfer') {
+    const me = state.me || 'dani'
     const from = memberById(state, gid, e.from)
     const to = memberById(state, gid, e.to)
     return {
       id: e.id, entry: e, isTransfer: true, catIcon: '🔁',
-      title: e.to === 'dani' ? from.short + ' te pagó' : 'Le pagaste a ' + to.short,
+      title: e.to === me ? from.short + ' te pagó' : 'Le pagaste a ' + to.short,
       sub: 'Transferencia · ' + fmtDateFull(e.date),
-      avatarColor: e.from === 'dani' ? '#7C3AED' : from.color, avatarInitial: e.from === 'dani' ? 'D' : from.initial,
+      avatarColor: e.from === me ? '#7C3AED' : from.color, avatarInitial: e.from === me ? 'D' : from.initial,
       amountText: fmt(e.amount, cur), impText: 'saldó', impColor: '#0E9F86',
     }
   }
+  const daniPct = daniPctAt(state, gid, e.date)
   const cat = catById(state, e.categoryId)
   const payer = memberById(state, gid, e.payerId)
   const meth = state.methods.find((x) => x.id === e.methodId)
@@ -276,14 +304,13 @@ export function rowFor(state, gid, e, daniPct, opts = {}) {
     id: e.id, entry: e, catIcon: cat.icon, title: e.desc || cat.name,
     sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + tail : 'Pagó ' + payer.short + ' · ' + tail,
     avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
-    amountText: fmt(e.amount, cur), impText: imp.text, impColor: imp.color,
+    amountText: fmt(e.amount, cur), impText: imp.text, impColor: imp.color, daniPct,
   }
 }
 
 // Detalle de un mes: gastado y "tu parte" por moneda + transferencias + items.
 // catFilter = array de ids ([] = todas). Las transferencias no suman al gasto.
 export function monthData(state, gid, key, catFilter = [], q = '') {
-  const daniPct = (state.splits[gid] || {}).dani || 0
   const rows = (state.ledgers[gid] || [])
     .map((e, idx) => ({ e, idx }))
     .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key && catMatch(catFilter, x.e) && textMatch(state, gid, x.e, q))
@@ -297,10 +324,11 @@ export function monthData(state, gid, key, catFilter = [], q = '') {
       transfers[cur] = (transfers[cur] || 0) + e.amount
     } else {
       totals[cur] = (totals[cur] || 0) + e.amount
-      const consumo = e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : daniPct / 100
+      const sh = myShare(state, gid, e)
+      const consumo = sh === null ? daniPctAt(state, gid, e.date) / 100 : sh
       tuParte[cur] = (tuParte[cur] || 0) + e.amount * consumo
     }
-    return rowFor(state, gid, e, daniPct, { withDate: true })
+    return rowFor(state, gid, e, { withDate: true })
   })
   return { totals, tuParte, transfers, items }
 }
@@ -313,12 +341,15 @@ export function ledgerMonths(state, gid) {
 }
 
 // CSV de movimientos en un rango de meses (para abrir en Sheets/Excel).
-export function buildCsv(state, gid, fromKey, toKey) {
-  const daniPct = (state.splits[gid] || {}).dani || 0
-  const other = state.groups[gid].members.find((m) => m.id !== 'dani') || { short: 'Otro' }
+// catFilter ([] = todas) y q (texto) permiten exportar justo lo que se está viendo filtrado.
+export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '') {
+  const mems = state.groups[gid].members
+  const anchor = mems[0] || { id: 'dani', short: 'Dani' } // 'mine' histórico
+  const otherM = mems[1] || { short: 'Otro' }
   const rows = (state.ledgers[gid] || [])
     .filter((e) => !e.future)
     .filter((e) => { const k = monthKeyOf(e.date); return (!fromKey || k >= fromKey) && (!toKey || k <= toKey) })
+    .filter((e) => catMatch(catFilter, e) && textMatch(state, gid, e, q))
     .slice()
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
   const head = ['Fecha', 'Mes', 'Tipo', 'Descripción', 'Categoría', 'Monto', 'Moneda', 'Pagó', 'División', 'Tu parte', 'Impacto']
@@ -336,13 +367,64 @@ export function buildCsv(state, gid, fromKey, toKey) {
     }
     const cat = catById(state, e.categoryId)
     const payer = memberById(state, gid, e.payerId)
-    const consumo = e.mode === 'full_mine' ? 1 : e.mode === 'full_theirs' ? 0 : daniPct / 100
+    const daniPct = daniPctAt(state, gid, e.date)
+    const sh = myShare(state, gid, e)
+    const consumo = sh === null ? daniPct / 100 : sh
     const tuParte = Math.round(e.amount * consumo * 100) / 100
-    const divLabel = e.mode === 'settled' ? 'Pagaron ambos' : e.mode === 'full_mine' ? 'Todo Dani' : e.mode === 'full_theirs' ? 'Todo ' + other.short : 'Dani ' + daniPct + '% / ' + other.short + ' ' + (100 - daniPct) + '%'
+    const shares = splitAt(state, gid, e.date)
+    const grpLabel = mems.map((m) => m.short + ' ' + (shares[m.id] || 0) + '%').join(' / ')
+    const divLabel = e.mode === 'settled' ? 'Pagaron ambos' : e.mode === 'full_mine' ? 'Todo ' + anchor.short : e.mode === 'full_theirs' ? 'Todo ' + otherM.short : grpLabel
     const imp = impactOf(state, gid, e, daniPct)
     lines.push([fecha, mes, 'Gasto', e.desc || cat.name, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
   })
   return '﻿' + lines.join('\n') // BOM para que Excel respete acentos
+}
+
+// Revisión de datos: detecta posibles errores de carga en el ledger de un grupo.
+// Devuelve una bandera por gasto con problemas: { id, entry, issues: [textos] }.
+// Se irán sumando chequeos (faltantes, duplicados, montos raros, moneda rara…).
+const median = (arr) => {
+  const s = [...arr].sort((a, b) => a - b)
+  const n = s.length
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2
+}
+
+export function dataFlags(state, gid) {
+  const g = state.groups[gid]
+  const led = (state.ledgers[gid] || []).filter((e) => e.kind !== 'transfer')
+  // posibles duplicados: misma fecha + monto + moneda + categoría + pagador (gastos distintos meses NO cuentan)
+  const dupKey = (e) => [e.date, e.amount, e.currency || 'ARS', e.categoryId, e.payerId].join('|')
+  const dupCount = {}
+  led.forEach((e) => { if (e.amount > 0) dupCount[dupKey(e)] = (dupCount[dupKey(e)] || 0) + 1 })
+  // mediana por categoría+moneda (solo con ≥4 muestras): base para detectar montos ~10x fuera (un cero de más/menos)
+  const amtKey = (e) => e.categoryId + '|' + (e.currency || 'ARS')
+  const byCat = {}
+  led.forEach((e) => { if (e.amount > 0 && e.categoryId) (byCat[amtKey(e)] = byCat[amtKey(e)] || []).push(e.amount) })
+  const meds = {}
+  for (const k in byCat) if (byCat[k].length >= 4) meds[k] = median(byCat[k])
+  // monedas poco usuales: usadas en ≤2 gastos sobre un historial amplio (posible moneda mal elegida).
+  // Una moneda con varios gastos (ej. un viaje) NO se marca: ahí es uso real, no error.
+  const curCount = {}
+  led.forEach((e) => { if (e.amount > 0) curCount[e.currency || 'ARS'] = (curCount[e.currency || 'ARS'] || 0) + 1 })
+  const rareCur = led.length >= 10 ? Object.keys(curCount).filter((cu) => curCount[cu] <= 2) : []
+  const flags = []
+  led.forEach((e) => {
+    const issues = []
+    // 1) datos faltantes
+    if (!e.categoryId || !state.categories.some((c) => c.id === e.categoryId)) issues.push('Sin categoría')
+    if (!e.amount || e.amount <= 0) issues.push('Monto en cero')
+    if (!g.personal && !e.payerId) issues.push('Sin quién pagó')
+    // 2) duplicados
+    if (e.amount > 0 && dupCount[dupKey(e)] > 1) issues.push('Posible duplicado')
+    // 3) monto inusual: ~10x por encima de lo típico de la categoría (posible cero de más; alto impacto).
+    // Solo el lado alto: un monto chico no se marca porque suele ser un gasto barato legítimo, no un error.
+    const med = meds[amtKey(e)]
+    if (med && e.amount >= med * 10) issues.push('Monto inusual (típico ~' + fmt(med, e.currency) + ')')
+    // 4) moneda poco usual
+    if (rareCur.includes(e.currency || 'ARS')) issues.push('Moneda poco usual (' + (e.currency || 'ARS') + ')')
+    if (issues.length) flags.push({ id: e.id, entry: e, issues })
+  })
+  return flags
 }
 
 // Ajusta el % de un miembro (pasos de 5) y rebalancea al resto para sumar 100.
@@ -381,6 +463,8 @@ export function setEqualSplit(cur) {
 export function parseChat(state, gid, text) {
   const g = state.groups[gid]
   const members = g.members
+  const me = state.me || 'dani'
+  const anchor = (members[0] || {}).id // 'mine' histórico (para mapear full_mine/full_theirs)
   const t = ' ' + text.toLowerCase() + ' '
   if (/borr[aá]|elimin[aá]/.test(t) && /[uú]ltimo/.test(t)) return { kind: 'correction', cor: { type: 'del' } }
   // moneda (default ARS, sin conversión) — se detecta primero porque define el umbral del monto
@@ -406,34 +490,35 @@ export function parseChat(state, gid, text) {
   if (!g.personal) {
     if (/\b(ambos|los dos|entre los dos)\b/.test(t)) {
       forcedMode = 'settled'
-      forcedPayer = 'dani'
+      forcedPayer = me
     } else if (/(le\s+)?deb[oó]\s+(el\s+)?total|debo\s+todo|lo\s+debo\s+todo/.test(t)) {
-      forcedMode = 'full_mine'
-      forcedPayer = (members.find((m) => m.id !== 'dani') || {}).id
-      for (const m of members) if (m.id !== 'dani' && t.includes(' ' + m.short.toLowerCase())) forcedPayer = m.id
+      // "lo debo todo yo": yo consumo todo → mapeo según el ancla; lo pagó el otro
+      forcedMode = me === anchor ? 'full_mine' : 'full_theirs'
+      forcedPayer = (members.find((m) => m.id !== me) || {}).id
+      for (const m of members) if (m.id !== me && t.includes(' ' + m.short.toLowerCase())) forcedPayer = m.id
     } else if (/me\s+deben?\s+(el\s+)?total|deben\s+todo/.test(t)) {
-      forcedMode = 'full_theirs'
-      forcedPayer = 'dani'
+      forcedMode = me === anchor ? 'full_theirs' : 'full_mine'
+      forcedPayer = me
     }
   }
   // pago entre personas
   if ((/\b(me|nos)\s+(pag|transfir|pas)/.test(t) || /\btransfir/.test(t)) && !g.personal) {
-    let from = (members.find((m) => m.id !== 'dani') || {}).id
-    for (const m of members) if (m.id !== 'dani' && t.includes(' ' + m.short.toLowerCase())) from = m.id
-    return { kind: 'payment', exp: { amount: amount || 0, from, to: 'dani' } }
+    let from = (members.find((m) => m.id !== me) || {}).id
+    for (const m of members) if (m.id !== me && t.includes(' ' + m.short.toLowerCase())) from = m.id
+    return { kind: 'payment', exp: { amount: amount || 0, from, to: me } }
   }
   // pagador
-  let payerId = g.personal ? 'dani' : null
-  if (/pagu[eé]|lo pagu|la pagu|\byo\b/.test(t)) payerId = 'dani'
+  let payerId = g.personal ? me : null
+  if (/pagu[eé]|lo pagu|la pagu|\byo\b/.test(t)) payerId = me
   for (const m of members) {
-    if (m.id !== 'dani') {
+    if (m.id !== me) {
       const n = m.short.toLowerCase()
       if (new RegExp('pag[oó]\\s+' + n).test(t) || new RegExp(n + '\\s+(lo |la )?pag').test(t)) payerId = m.id
     }
   }
   // correcciones sobre el último
   if (/(eran|era|son|ser[ií]an|perd[oó]n)/.test(t) && amount) return { kind: 'correction', cor: { field: 'amount', amount } }
-  if (/(lo|la)\s+pag[oó]\b/.test(t) && payerId && payerId !== 'dani' && !amount) return { kind: 'correction', cor: { field: 'payer', payerId } }
+  if (/(lo|la)\s+pag[oó]\b/.test(t) && payerId && payerId !== me && !amount) return { kind: 'correction', cor: { field: 'payer', payerId } }
   if (/(cambialo|cambiala|cambiar|pasalo|pasala)\s+a\s+/.test(t)) {
     const after = text.toLowerCase().split(/\s+a\s+/).pop().trim()
     const cat = resolveCat(state, gid, after)

@@ -1,0 +1,13 @@
+{
+  "name": "Cuentas Claras",
+  "short_name": "Cuentas Claras",
+  "description": "Gastos compartidos, sin lío.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FBFCFE",
+  "theme_color": "#7C3AED",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

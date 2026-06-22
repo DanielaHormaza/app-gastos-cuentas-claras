@@ -78,8 +78,8 @@ export default function Inicio({ s, actions }) {
             const g = s.groups[id]
             const c = compute(s, id)
             const curs = CURRENCIES.filter((cu) => Math.abs(c.nets[cu] || 0) >= 1)
-            const others = g.members.filter((m) => m.id !== 'dani')
-            const membersText = others.length === 1 ? others[0].short + ' y vos' : g.members.length + ' personas'
+            const others = g.members.filter((m) => m.id !== (s.me || 'dani'))
+            const membersText = others.length === 1 ? others[0].short + ' y ' + s.profile.name : g.members.length + ' personas'
             const label = curs.length === 0 ? 'a mano' : (c.nets[curs[0]] > 0 ? 'te debe' : 'le debés')
             return (
               <div

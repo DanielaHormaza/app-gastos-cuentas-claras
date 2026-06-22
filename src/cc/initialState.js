@@ -24,6 +24,8 @@ export const METHOD_COLORS = ['#7C3AED', '#3B82F6', '#2ECCB1', '#F59E0B', '#EC48
 
 export function makeInitialState() {
   return {
+    // ---- identidad ----
+    me: 'dani', // member_key del usuario logueado (se setea desde la sesión; 'dani' por defecto)
     // ---- navegación ----
     screen: 'list', // list | chat | profile | archived | newgroup | methodDetail | monthDetail
     groupId: null,
@@ -94,7 +96,7 @@ export function makeInitialState() {
     ],
     groups: {
       pareja: {
-        id: 'pareja', name: 'Juan', initial: 'J',
+        id: 'pareja', name: 'Pareja', initial: 'P',
         gradient: 'linear-gradient(135deg,#3B82F6,#7C3AED)',
         description: 'Gastos compartidos con Juan.',
         createdAt: '1 abr 2026',
@@ -113,9 +115,14 @@ export function makeInitialState() {
       },
     },
     splits: {
-      pareja: { dani: 60, juan: 40 }, // Dani 60% / Juan 40% (como en la planilla)
+      pareja: { dani: 60, juan: 40 }, // Dani 60% / Juan 40% (como en la planilla) — reparto ACTUAL
       personal: { dani: 100 },
     },
+    // Regímenes de reparto PASADOS por grupo: { until, shares }. Aplican a gastos con fecha < until.
+    // Se llenan al cambiar el % (rige "desde hoy"); vacío = el % actual aplicó siempre.
+    splitLog: { pareja: [], personal: [] },
+    // Metadatos del reparto actual por grupo: desde cuándo rige + última edición.
+    splitMeta: { pareja: { from: '2000-01-01', at: null, by: null }, personal: { from: '2000-01-01', at: null, by: null } },
     ledgers: {
       pareja: PAREJA_LEDGER, // datos reales importados del CSV (ver src/cc/seedPareja)
       personal: [],

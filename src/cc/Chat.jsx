@@ -1,12 +1,16 @@
 import { useEffect, useRef } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, textMatch, groupCategories } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, textMatch, groupCategories, buildCsv, daniPctAt } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
-import { Futuros, Historicos } from './GroupViews'
+import { Futuros, Historicos, downloadCsv } from './GroupViews'
 import { Filters } from './CategoryFilter'
 import Config from './Config'
 import SettleSheet from './SettleSheet'
-import { dayLabel, fmtDateFull, todayISO } from './dates'
+import Revision from './Revision'
+import { dayLabel, fmtDateFull, fmtDateDow, todayISO } from './dates'
+
+// Nombre de cada vista (para el menú y la leyenda del header).
+const VIEW_TITLES = { chat: 'Chat', ledger: 'Movimientos diarios', months: 'Gastos futuros', hist: 'Gastos históricos', review: 'Revisión de datos' }
 
 const card = { background: '#fff', border: '1px solid #EAEEF4', boxShadow: '0 6px 18px -12px rgba(15,23,42,.35)' }
 const aiAvatar = { width: 28, height: 28, borderRadius: '50%', background: BRAND_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: 13, fontWeight: 800 }
@@ -29,12 +33,13 @@ export default function Chat({ s, actions }) {
       {/* header */}
       <div style={{ background: '#fff', padding: '14px 14px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #EEF1F6' }}>
         <div onClick={actions.back} style={{ width: 38, height: 38, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}><Back /></div>
-        <div onClick={actions.toggleMenu} style={{ flex: 1, display: 'flex', justifyContent: 'center', cursor: 'pointer' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', borderRadius: 999, background: '#F4F6FA' }}>
+        <div onClick={actions.toggleMenu} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 14px', borderRadius: 999, background: '#F4F6FA' }}>
             <div style={{ width: 24, height: 24, borderRadius: 8, background: g.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 11 }}>{g.initial}</div>
             <span style={{ fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{g.name}</span>
             <ChevronDown />
           </div>
+          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{VIEW_TITLES[s.view] || ''}</span>
         </div>
         <div onClick={actions.openConfig} style={{ width: 38, height: 38, borderRadius: '50%', background: '#F1F4F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}><Gear /></div>
       </div>
@@ -52,6 +57,7 @@ export default function Chat({ s, actions }) {
       )}
       {s.view === 'months' && <Futuros s={s} actions={actions} />}
       {s.view === 'hist' && <Historicos s={s} actions={actions} />}
+      {s.view === 'review' && <Revision s={s} actions={actions} />}
 
       {s.configOpen && <Config s={s} actions={actions} />}
     </div>
@@ -61,9 +67,10 @@ export default function Chat({ s, actions }) {
 function ViewMenu({ s, actions }) {
   const items = [
     { view: 'chat', emoji: '💬', bg: '#F1ECFD', title: 'Chat', sub: 'Cargar gastos' },
-    { view: 'ledger', emoji: '📆', bg: '#E7F0FE', title: 'Movimientos', sub: 'Tocá un gasto para editarlo' },
+    { view: 'ledger', emoji: '📆', bg: '#E7F0FE', title: 'Movimientos diarios', sub: 'Tocá un gasto para editarlo' },
     { view: 'months', emoji: '📅', bg: '#EAF8F3', title: 'Gastos futuros', sub: 'Cuotas y fijos por venir' },
     { view: 'hist', emoji: '📊', bg: '#FDF0E7', title: 'Gastos históricos', sub: 'Por mes y medio de pago' },
+    { view: 'review', emoji: '🔎', bg: '#FEF3E2', title: 'Revisión de datos', sub: 'Posibles errores de carga' },
   ]
   return (
     <>
@@ -108,7 +115,7 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions })
     return {
       catIcon: cat.icon, catName: ex.desc || cat.name, amountText: fmt(ex.amount, ex.currency),
       payerInitial: payer.initial, payerColor: payer.color,
-      descText: descFor(s, gid, ex, c.daniPct),
+      descText: descFor(s, gid, ex, daniPctAt(s, gid, ex.date || todayISO())),
       dateText: ex.date ? fmtDateFull(ex.date) : 'hoy', cuotasText: ex.cuotas ? '· en ' + ex.cuotas + ' cuotas' : '',
     }
   }
@@ -134,7 +141,7 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions })
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>HOY</div>
           {thread.map((m) => {
-            const ts = m.time ? (m.date && m.date !== todayISO() ? fmtDateFull(m.date) + ' · ' + m.time : m.time) : ''
+            const ts = m.time ? (m.date ? fmtDateDow(m.date) + ' · ' + m.time : m.time) : ''
             return (
               <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.kind === 'user' ? 'flex-end' : 'flex-start' }}>
                 <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} />
@@ -195,7 +202,7 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
           <ExpBox e={e} />
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button onClick={() => actions.confirmExp(m.id)} style={{ ...primaryBtn, flex: 1 }}>Confirmar</button>
-            <button onClick={() => actions.confirmExp(m.id)} style={ghostBtn}>Editar</button>
+            <button onClick={() => actions.editInterp(m.id)} style={ghostBtn}>Editar</button>
             <button onClick={() => actions.cancelMsg(m.id)} style={closeBtn}><Close /></button>
           </div>
         </div>
@@ -224,7 +231,7 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
     )
   }
   if (m.kind === 'ambiguous') {
-    const e = mkExp({ ...m.exp, payerId: 'dani' })
+    const e = mkExp({ ...m.exp, payerId: s.me || 'dani' })
     return (
       <Row max="92%">
         <Ai mt />
@@ -386,16 +393,22 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
   const arrowColor = netArs > 1 ? '#0E9F86' : netArs < -1 ? '#E11D5B' : '#94A3B8'
 
   const cats = groupCategories(s, gid)
+  const meShort = (g.members.find((m) => m.id === (s.me || 'dani')) || {}).short || 'Vos'
+  const exportCsv = () => {
+    const csv = buildCsv(s, gid, null, null, s.catFilter, s.moveQuery)
+    downloadCsv(csv, 'cuentas-claras_movimientos.csv')
+  }
   const order = []
   const byDay = {}
+  const dayDate = {}
   ;(s.ledgers[gid] || [])
     .filter((e) => !e.future && catMatch(s.catFilter, e) && textMatch(s, gid, e, s.moveQuery))
     .slice()
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     .forEach((e) => {
       const key = (dayLabel(e.date) + ' · ' + fmtDateFull(e.date)).toUpperCase()
-      if (!byDay[key]) { byDay[key] = []; order.push(key) }
-      byDay[key].push(rowFor(s, gid, e, c.daniPct))
+      if (!byDay[key]) { byDay[key] = []; order.push(key); dayDate[key] = e.date }
+      byDay[key].push(rowFor(s, gid, e))
     })
 
   return (
@@ -405,14 +418,22 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>{bannerLabel}</div>
           <BalanceLines lines={lines} size={15} />
         </div>
-        <div className="num" style={{ fontWeight: 700, fontSize: 22, color: arrowColor }}>{arrow}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={exportCsv} title="Descargar lo que estás viendo en CSV" style={{ display: 'flex', alignItems: 'center', gap: 5, border: '1.5px solid #E2E8F0', background: '#fff', color: '#7C3AED', fontFamily: 'inherit', fontWeight: 800, fontSize: 12, padding: '6px 11px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap' }}>⤓ CSV</button>
+          <div className="num" style={{ fontWeight: 700, fontSize: 22, color: arrowColor }}>{arrow}</div>
+        </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
         <Filters cats={cats} catFilter={s.catFilter} onCat={actions.setCatFilter} query={s.moveQuery} onQuery={actions.setMoveQuery} />
         {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '16px 0' }}>Sin movimientos que coincidan.</div>}
-        {order.map((k) => (
+        {order.map((k) => {
+          const dp = daniPctAt(s, gid, dayDate[k])
+          return (
           <div key={k} style={{ display: 'contents' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '8px 4px 2px' }}>{k}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, padding: '8px 4px 2px' }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em' }}>{k}</span>
+              {!g.personal && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#C3CCDA', whiteSpace: 'nowrap' }}>{meShort} {dp}% · {c.other.short} {100 - dp}%</span>}
+            </div>
             {byDay[k].map((it) => (
               <div key={it.entry.id} onClick={() => actions.openEdit(it.entry)} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>
                 <div style={{ width: 40, height: 40, borderRadius: '50%', background: it.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15, position: 'relative', flexShrink: 0 }}>
@@ -430,7 +451,8 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
               </div>
             ))}
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

@@ -35,6 +35,11 @@ export function fmtDateFull(iso) {
   return d.getDate() + '/' + MES[d.getMonth()] + '/' + String(d.getFullYear()).slice(-2)
 }
 
+// 'Dom 21/jun/26' — día de semana + fecha completa
+export function fmtDateDow(iso) {
+  return DOW[parseISO(iso).getDay()] + ' ' + fmtDateFull(iso)
+}
+
 // 'YYYY-MM'
 export function monthKeyOf(iso) {
   return (iso || '').slice(0, 7)
