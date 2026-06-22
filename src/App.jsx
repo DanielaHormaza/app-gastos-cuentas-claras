@@ -16,6 +16,12 @@ import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCate
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
 const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null)].join('|')
+// Snapshot id→{e,gid,fp} de todos los movimientos (para el espejo de sincronización).
+const ledSnapshot = (ledgers) => {
+  const map = {}
+  for (const gid in ledgers) for (const e of ledgers[gid]) map[e.id] = { e, gid, fp: expFingerprint(e) }
+  return map
+}
 
 // Layout de dos paneles a partir de ~900px de ancho.
 function useDesktop() {
@@ -61,6 +67,8 @@ export default function App() {
   const [session, setSession] = useState(undefined)
   const [dataReady, setDataReady] = useState(false)
   const [dataErr, setDataErr] = useState(null)
+  const ledSyncRef = useRef(null) // snapshot de movimientos ya sincronizados
+  const catSyncRef = useRef(null) // ids de categorías ya sincronizadas
 
   useEffect(() => {
     const apply = (sess) => {
@@ -104,11 +112,9 @@ export default function App() {
   }, [session?.user?.id])
 
   // espejo de movimientos → Supabase: detecta altas/ediciones/bajas y las sincroniza
-  const ledSyncRef = useRef(null)
   useEffect(() => {
     if (!dataReady) { ledSyncRef.current = null; return }
-    const cur = {}
-    for (const gid in s.ledgers) for (const e of s.ledgers[gid]) cur[e.id] = { e, gid, fp: expFingerprint(e) }
+    const cur = ledSnapshot(s.ledgers)
     const prev = ledSyncRef.current
     if (prev === null) { ledSyncRef.current = cur; return } // primera vez tras cargar: solo snapshot
     for (const id in cur) if (!prev[id] || prev[id].fp !== cur[id].fp) cloudUpsertExpense(cur[id].e, cur[id].gid)
@@ -117,7 +123,6 @@ export default function App() {
   }, [s.ledgers, dataReady])
 
   // espejo de categorías nuevas → Supabase
-  const catSyncRef = useRef(null)
   useEffect(() => {
     if (!dataReady) { catSyncRef.current = null; return }
     const prev = catSyncRef.current
@@ -125,6 +130,32 @@ export default function App() {
     for (const c of s.categories) if (!prev.has(c.id)) cloudUpsertCategory(c)
     catSyncRef.current = new Set(s.categories.map((c) => c.id))
   }, [s.categories, dataReady])
+
+  // TIEMPO REAL: si otro dispositivo/usuario cambia algo, recargamos los datos (sin perder navegación ni chat).
+  useEffect(() => {
+    if (!session?.user || !dataReady) return
+    let timer = null
+    const reload = () => {
+      clearTimeout(timer)
+      timer = setTimeout(async () => {
+        try {
+          const cloud = await loadCloudState(session.user.id)
+          // actualizo los refs de sincronización ANTES del setS para no re-escribir lo que vino de afuera
+          ledSyncRef.current = ledSnapshot(cloud.ledgers)
+          catSyncRef.current = new Set(cloud.categories.map((c) => c.id))
+          setS((prev) => ({ ...prev, me: cloud.me, groups: cloud.groups, splits: cloud.splits, splitLog: cloud.splitLog, splitMeta: cloud.splitMeta, ledgers: cloud.ledgers, categories: cloud.categories }))
+        } catch (e) {
+          console.error('[realtime]', e.message)
+        }
+      }, 350)
+    }
+    const ch = supabase
+      .channel('cc-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'split_history' }, reload)
+      .subscribe()
+    return () => { clearTimeout(timer); supabase.removeChannel(ch) }
+  }, [session?.user?.id, dataReady])
 
   // Persiste solo los datos (no el estado de navegación transitorio).
   useEffect(() => {
