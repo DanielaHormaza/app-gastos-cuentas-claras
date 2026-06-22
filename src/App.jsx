@@ -134,18 +134,20 @@ export default function App() {
   // TIEMPO REAL: si otro dispositivo/usuario cambia algo, recargamos los datos (sin perder navegación ni chat).
   useEffect(() => {
     if (!session?.user || !dataReady) return
+    // Realtime usa MI token para que RLS me deje recibir los cambios de mis grupos.
+    if (session.access_token) supabase.realtime.setAuth(session.access_token)
     let timer = null
-    const reload = () => {
+    const reload = (payload) => {
+      console.log('[realtime] cambio detectado:', payload?.table, payload?.eventType)
       clearTimeout(timer)
       timer = setTimeout(async () => {
         try {
           const cloud = await loadCloudState(session.user.id)
-          // actualizo los refs de sincronización ANTES del setS para no re-escribir lo que vino de afuera
           ledSyncRef.current = ledSnapshot(cloud.ledgers)
           catSyncRef.current = new Set(cloud.categories.map((c) => c.id))
           setS((prev) => ({ ...prev, me: cloud.me, groups: cloud.groups, splits: cloud.splits, splitLog: cloud.splitLog, splitMeta: cloud.splitMeta, ledgers: cloud.ledgers, categories: cloud.categories }))
         } catch (e) {
-          console.error('[realtime]', e.message)
+          console.error('[realtime] error al recargar:', e.message)
         }
       }, 350)
     }
@@ -153,7 +155,7 @@ export default function App() {
       .channel('cc-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'split_history' }, reload)
-      .subscribe()
+      .subscribe((status) => console.log('[realtime] estado del canal:', status))
     return () => { clearTimeout(timer); supabase.removeChannel(ch) }
   }, [session?.user?.id, dataReady])
 
