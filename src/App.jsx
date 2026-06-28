@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
-import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById } from './cc/logic'
+import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith } from './cc/logic'
 import { todayISO, nowTime } from './cc/dates'
 import Inicio from './cc/Inicio'
 import Chat from './cc/Chat'
@@ -8,11 +8,12 @@ import EditSheet from './cc/EditSheet'
 import Profile from './cc/Profile'
 import Archived from './cc/Archived'
 import NewGroup from './cc/NewGroup'
+import Friend, { AddFriend } from './cc/Friend'
 import { MethodDetail, MonthDetail } from './cc/Detail'
 import { Logo } from './cc/icons'
 import Login from './Login'
 import { supabase } from './supabase'
-import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage } from './cloud'
+import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember } from './cloud'
 import { setAmountsHidden } from './cc/logic'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
@@ -21,6 +22,21 @@ const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.curr
 const ledSnapshot = (ledgers) => {
   const map = {}
   for (const gid in ledgers) for (const e of ledgers[gid]) map[e.id] = { e, gid, fp: expFingerprint(e) }
+  return map
+}
+
+// ----- Grupos y miembros -----
+// Espejo de sincronización: huella del grupo + huella de cada miembro (para detectar altas/cambios).
+const grpFp = (g) => [g.name, g.initial, g.gradient, g.description, g.eventDate, g.isGroup, g.direct, g.personal].join('|')
+const memFp = (m) => [m.id, m.name, m.short, m.color, m.initial, m.email].join('|')
+const groupSnapshot = (groups) => {
+  const map = {}
+  for (const gid in groups) {
+    const g = groups[gid]
+    const members = {}
+    for (const m of g.members) members[m.id] = memFp(m)
+    map[gid] = { g, gfp: grpFp(g), members }
+  }
   return map
 }
 
@@ -69,6 +85,40 @@ const applyEdit = (prev, patch) => {
   return { draft, ledgers: { ...prev.ledgers, [g]: l } }
 }
 
+// Miembro "yo" para armar grupos nuevos: el que ya existe en algún grupo, o uno derivado del perfil.
+const meMemberOf = (prev) => {
+  const me = prev.me || 'dani'
+  for (const gid in prev.groups) {
+    const m = prev.groups[gid].members.find((x) => x.id === me)
+    if (m) return m
+  }
+  const nm = prev.profile.name || 'Vos'
+  return { id: me, name: nm + ' (vos)', short: nm, color: '#7C3AED', initial: (nm.trim()[0] || 'D').toUpperCase() }
+}
+
+// Crea (en el store local) un grupo 1:1 "directo" con una persona y devuelve el patch que lo abre.
+// BACKEND (pendiente con OK): faltaría cloudUpsertGroup + create_group (security definer) por RLS.
+const buildDirect = (prev, pid, person, pending, email) => {
+  const me = prev.me || 'dani'
+  const meM = meMemberOf(prev)
+  const id = 'd_' + pid
+  const color = person.color || personColor(prev, pid)
+  const friend = { id: pid, name: person.name || person.short, short: person.short, color, initial: person.initial }
+  if (pending) friend.pending = true
+  if (email) friend.email = email
+  const group = { id, name: friend.short, initial: friend.initial, gradient: 'linear-gradient(135deg,' + color + ',#3B82F6)', description: 'Espacio uno a uno.', createdAt: todayISO(), direct: true, members: [meM, friend] }
+  return {
+    groups: { ...prev.groups, [id]: group },
+    splits: { ...prev.splits, [id]: { [me]: 50, [pid]: 50 } },
+    splitLog: { ...prev.splitLog, [id]: [] },
+    splitMeta: { ...prev.splitMeta, [id]: { from: '2000-01-01', at: null, by: null } },
+    ledgers: { ...prev.ledgers, [id]: [] },
+    threads: { ...prev.threads, [id]: [{ id: 'w' + id, role: 'app', kind: 'text', text: 'Chat 1:1 con ' + friend.short + '. Escribí un gasto, ej: “2000 café pagué yo”.' }] },
+    payments: { ...prev.payments, [id]: [] },
+    screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false,
+  }
+}
+
 // Layout de dos paneles a partir de ~900px de ancho.
 function useDesktop() {
   const [d, setD] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 900px)').matches)
@@ -84,13 +134,16 @@ function useDesktop() {
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
 const KEY = 'cuentas-claras:v4'
 const HIDE_KEY = 'cuentas-claras:hideAmounts' // preferencia por dispositivo (no se sincroniza)
-const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'histSel']
+const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'pinned', 'histSel']
 
 function load() {
   const hideAmounts = localStorage.getItem(HIDE_KEY) === '1'
+  // DEV: ?fresh=1 ignora (y borra) los datos guardados y arranca del seed de demo (Asado, Pato, etc.).
+  const fresh = import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).get('fresh') === '1'
+  if (fresh) { try { localStorage.removeItem(KEY) } catch { /* sin storage */ } }
   let st
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = fresh ? null : localStorage.getItem(KEY)
     st = raw ? migrate({ ...makeInitialState(), ...JSON.parse(raw), hideAmounts }) : { ...makeInitialState(), hideAmounts }
   } catch {
     st = { ...makeInitialState(), hideAmounts } /* dato corrupto: se ignora */
@@ -110,6 +163,8 @@ function load() {
 function migrate(s) {
   s.splitLog = s.splitLog || {}
   s.splitMeta = s.splitMeta || {}
+  // pinned: de formato viejo (array de gids) al nuevo ({ kind, id })
+  s.pinned = (s.pinned || []).map((p) => (typeof p === 'string' ? { kind: 'group', id: p } : p)).filter((p) => p && p.id)
   Object.keys(s.splits || {}).forEach((gid) => {
     if (!s.splitLog[gid]) s.splitLog[gid] = []
     if (!s.splitMeta[gid]) s.splitMeta[gid] = { from: '2000-01-01', at: null, by: null }
@@ -128,6 +183,7 @@ export default function App() {
   const [dataReady, setDataReady] = useState(false)
   const [dataErr, setDataErr] = useState(null)
   const ledSyncRef = useRef(null) // snapshot de movimientos ya sincronizados
+  const grpSyncRef = useRef(null) // snapshot de grupos/miembros ya sincronizados
   const catSyncRef = useRef(null) // ids de categorías ya sincronizadas
   const msgSyncRef = useRef(null) // snapshot de mensajes ya sincronizados
   const typingChanRef = useRef(null) // canal de "escribiendo…" (broadcast) del grupo activo
@@ -165,7 +221,7 @@ export default function App() {
         const cloud = await loadCloudState(session.user.id)
         // conservar el historial de chat ya guardado (por dispositivo); intro solo si no hay
         if (!cancelled) {
-          setS((prev) => ({ ...cloud, threads: mergeThreads(prev.threads, cloud.threads), hideAmounts: prev.hideAmounts, authEmail: prev.authEmail })) // chat compartido desde la nube; hideAmounts/authEmail son del cliente, no de la nube
+          setS((prev) => ({ ...cloud, threads: mergeThreads(prev.threads, cloud.threads), hideAmounts: prev.hideAmounts, pinned: prev.pinned, authEmail: prev.authEmail })) // chat compartido desde la nube; hideAmounts/pinned/authEmail son del cliente, no de la nube
           setDataReady(true)
         }
       } catch (e) {
@@ -185,6 +241,32 @@ export default function App() {
     for (const id in prev) if (!cur[id]) cloudDeleteExpense(id)
     ledSyncRef.current = cur
   }, [s.ledgers, dataReady])
+
+  // espejo de grupos/miembros → Supabase: crea grupos nuevos (create_group), actualiza datos y suma miembros.
+  // 'personal' no se sincroniza acá (ya existe en la nube y es del usuario).
+  useEffect(() => {
+    if (!dataReady) { grpSyncRef.current = null; return }
+    const cur = groupSnapshot(s.groups)
+    const prev = grpSyncRef.current
+    if (prev === null) { grpSyncRef.current = cur; return } // primera vez tras cargar: solo snapshot
+    for (const gid in cur) {
+      if (gid === 'personal') continue
+      if (!prev[gid]) {
+        cloudCreateGroup(cur[gid].g, cur[gid].g.members, s.me) // grupo/1:1 nuevo
+        const meta = (s.splitMeta && s.splitMeta[gid]) || {}
+        if (s.splits[gid]) cloudSaveSplit(gid, meta.from || '2000-01-01', s.splits[gid], meta.by, meta.at) // siembra el reparto inicial
+        continue
+      }
+      if (prev[gid].gfp !== cur[gid].gfp) cloudUpsertGroup(cur[gid].g) // cambió nombre/foto/fecha…
+      for (const mid in cur[gid].members) {
+        if (prev[gid].members[mid] !== cur[gid].members[mid]) {
+          const mem = cur[gid].g.members.find((x) => x.id === mid)
+          if (mem) cloudUpsertMember(mem, gid) // miembro nuevo o editado
+        }
+      }
+    }
+    grpSyncRef.current = cur
+  }, [s.groups, dataReady])
 
   // espejo de categorías nuevas → Supabase
   useEffect(() => {
@@ -219,6 +301,7 @@ export default function App() {
         try {
           const cloud = await loadCloudState(session.user.id)
           ledSyncRef.current = ledSnapshot(cloud.ledgers)
+          grpSyncRef.current = groupSnapshot(cloud.groups)
           catSyncRef.current = new Set(cloud.categories.map((c) => c.id))
           msgSyncRef.current = msgSnapshot(cloud.threads)
           setS((prev) => ({ ...prev, me: cloud.me, groups: cloud.groups, splits: cloud.splits, splitLog: cloud.splitLog, splitMeta: cloud.splitMeta, ledgers: cloud.ledgers, categories: cloud.categories, threads: mergeThreads(prev.threads, cloud.threads) }))
@@ -232,6 +315,8 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'split_history' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_members' }, reload)
       .subscribe((status) => console.log('[realtime] estado del canal:', status))
     return () => { clearTimeout(timer); supabase.removeChannel(ch) }
   }, [session?.user?.id, dataReady])
@@ -264,16 +349,25 @@ export default function App() {
     if (p === '0') localStorage.removeItem('cc-dev')
   }, [])
 
-  // Altura realmente visible (descuenta el teclado en iOS-PWA) → la app se ajusta a eso
-  // así el header no se tapa y el input queda justo arriba del teclado.
+  // Altura realmente visible (descuenta el teclado en iOS-PWA) → la app se ajusta a eso.
+  // Además fijamos el TOP del viewport visible (offsetTop) y forzamos scroll a 0: así, cuando
+  // iOS abre el teclado y "scrollea" la página por detrás, no queda el espacio vacío raro;
+  // la app sigue pegada a lo que se ve y el input queda justo arriba del teclado.
   useEffect(() => {
     const vv = window.visualViewport
-    const setH = () => document.documentElement.style.setProperty('--app-h', (vv ? vv.height : window.innerHeight) + 'px')
+    const setH = () => {
+      const de = document.documentElement
+      de.style.setProperty('--app-h', (vv ? vv.height : window.innerHeight) + 'px')
+      de.style.setProperty('--app-top', (vv ? vv.offsetTop : 0) + 'px')
+      // la página (layout viewport) no debe quedar scrolleada detrás de la app fija
+      if (window.scrollY !== 0) window.scrollTo(0, 0)
+    }
     setH()
     vv && vv.addEventListener('resize', setH)
     vv && vv.addEventListener('scroll', setH)
     window.addEventListener('resize', setH)
-    return () => { vv && vv.removeEventListener('resize', setH); vv && vv.removeEventListener('scroll', setH); window.removeEventListener('resize', setH) }
+    window.addEventListener('scroll', setH, { passive: true })
+    return () => { vv && vv.removeEventListener('resize', setH); vv && vv.removeEventListener('scroll', setH); window.removeEventListener('resize', setH); window.removeEventListener('scroll', setH) }
   }, [])
 
   // Persiste solo los datos (no el estado de navegación transitorio).
@@ -338,9 +432,65 @@ export default function App() {
     openProfile: () => set({ screen: 'profile', menuOpen: false }),
     openPersonal: () => set({ screen: 'chat', groupId: 'personal', view: 'chat', menuOpen: false, configOpen: false }),
     openGroup: (id) => set({ screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false }),
-    openNewGroup: () => set({ screen: 'newgroup', newGroup: { name: '', desc: '', members: [], memberName: '', invited: false } }),
+    openNewGroup: () => set({ screen: 'newgroup', newGroup: { name: '', desc: '', date: '', members: [], memberName: '', invited: false } }),
     openArchived: () => set({ screen: 'archived', groupQuery: '' }),
     backToList: () => set({ screen: 'list' }),
+
+    // ---- modelo centrado en personas ----
+    setHomeTab: (tab) => set({ homeTab: tab }),
+    openFriend: (pid) => set({ screen: 'friend', friendId: pid, menuOpen: false, configOpen: false }),
+    backFromFriend: () => set({ screen: 'list' }),
+    // Abre el espacio 1:1 con una persona (su grupo de 2; si no existe, lo crea al vuelo, local).
+    openFriendChat: (pid) =>
+      set((prev) => {
+        const existing = directGroupWith(prev, pid)
+        if (existing) return { screen: 'chat', groupId: existing, view: 'chat', menuOpen: false, configOpen: false }
+        const p = personById(prev, pid)
+        return buildDirect(prev, pid, p, !!p.pending, p.email)
+      }),
+    // Abre los movimientos de un grupo (para saltar al origen de un gasto desde la vista agregada).
+    openLedgerOf: (id) => set({ screen: 'chat', groupId: id, view: 'ledger', menuOpen: false, configOpen: false }),
+
+    // ---- fijados en el inicio (personas y grupos, máx. 2) ----
+    // Fijar/desfijar: si ya está → pide confirmación para desfijar; si no y hay lugar → fija.
+    togglePin: (kind, id) =>
+      set((prev) => {
+        if (prev.pinned.some((p) => p.kind === kind && p.id === id)) return { confirmUnpin: { kind, id } }
+        if (prev.pinned.length >= 2) return {} // máx. 2 (silencioso)
+        return { pinned: [...prev.pinned, { kind, id }], menuOpen: false }
+      }),
+    requestUnpin: (kind, id) => set({ confirmUnpin: { kind, id } }),
+    cancelUnpin: () => set({ confirmUnpin: null }),
+    confirmUnpinYes: () => set((prev) => ({ pinned: prev.pinned.filter((p) => !(p.kind === prev.confirmUnpin.kind && p.id === prev.confirmUnpin.id)), confirmUnpin: null })),
+    // Saldar desde el perfil: abre el espacio 1:1 (creándolo si hace falta) con la hoja de saldar.
+    openFriendSettle: (pid) =>
+      set((prev) => {
+        const existing = directGroupWith(prev, pid)
+        if (existing) return { screen: 'chat', groupId: existing, view: 'chat', settleOpen: true, menuOpen: false, configOpen: false }
+        const p = personById(prev, pid)
+        return { ...buildDirect(prev, pid, p, !!p.pending, p.email), settleOpen: true }
+      }),
+    // Copia el enlace de invitación de una persona pendiente (feedback transitorio).
+    copyInvite: (pid) => {
+      const link = 'https://cuentasclaras.app/i/' + String(pid).slice(-6).toUpperCase()
+      try { navigator.clipboard && navigator.clipboard.writeText(link) } catch { /* sin permiso de portapapeles */ }
+      set({ inviteCopied: pid })
+      setTimeout(() => set((prev) => (prev.inviteCopied === pid ? { inviteCopied: null } : {})), 2500)
+    },
+    openNewFriend: () => set({ addFriend: { name: '', email: '' } }),
+    closeNewFriend: () => set({ addFriend: null }),
+    onAddFriendField: (field, v) => set((prev) => ({ addFriend: { ...(prev.addFriend || {}), [field]: v } })),
+    createFriend: () =>
+      set((prev) => {
+        const name = ((prev.addFriend && prev.addFriend.name) || '').trim()
+        if (!name) return {}
+        const email = ((prev.addFriend && prev.addFriend.email) || '').trim()
+        const pid = 'p' + Date.now()
+        // color estable evitando el violeta del usuario (índice 0 de PALETTE)
+        const color = PALETTE[1 + (friendIds(prev).length % (PALETTE.length - 1))]
+        const person = { name, short: name.split(' ')[0], initial: (name.trim()[0] || '?').toUpperCase(), color }
+        return { ...buildDirect(prev, pid, person, true, email), addFriend: null }
+      }),
     back: () =>
       set((prev) => {
         // Desde una sub-vista (movimientos, históricos, etc.) volvés al chat; desde el chat, a la lista.
@@ -617,6 +767,7 @@ export default function App() {
     // ---- config de grupo ----
     onGroupName: (v) => set((prev) => ({ groups: { ...prev.groups, [gid]: { ...prev.groups[gid], name: v, initial: (v.trim()[0] || 'G').toUpperCase() } } })),
     onGroupDesc: (v) => set((prev) => ({ groups: { ...prev.groups, [gid]: { ...prev.groups[gid], description: v } } })),
+    onGroupDate: (v) => set((prev) => ({ groups: { ...prev.groups, [gid]: { ...prev.groups[gid], eventDate: v || undefined } } })),
     onChangePhoto: () =>
       set((prev) => {
         const i = (GRADIENTS.indexOf(prev.groups[gid].gradient) + 1) % GRADIENTS.length
@@ -681,11 +832,19 @@ export default function App() {
 
     // ---- nuevo grupo ----
     onNewGroupField: (field, v) => set((prev) => ({ newGroup: { ...prev.newGroup, [field]: v } })),
+    // Agrega un participante tipeado a mano (sin cuenta → invitado pendiente).
     addNewGroupMember: () =>
       set((prev) => {
         const nm = (prev.newGroup.memberName || '').trim()
         if (!nm) return {}
-        return { newGroup: { ...prev.newGroup, members: [...prev.newGroup.members, { name: nm }], memberName: '' } }
+        return { newGroup: { ...prev.newGroup, members: [...prev.newGroup.members, { name: nm, pending: true }], memberName: '' } }
+      }),
+    // Agrega un amigo que YA tenés cargado (reusa su identidad para que el saldo se agregue bien).
+    addExistingFriendToGroup: (pid) =>
+      set((prev) => {
+        if (prev.newGroup.members.some((m) => m.id === pid)) return { newGroup: { ...prev.newGroup, memberName: '' } }
+        const p = personById(prev, pid)
+        return { newGroup: { ...prev.newGroup, members: [...prev.newGroup.members, { id: pid, name: p.name, short: p.short, pending: !!p.pending, email: p.email }], memberName: '' } }
       }),
     removeNewGroupMember: (i) => set((prev) => ({ newGroup: { ...prev.newGroup, members: prev.newGroup.members.filter((_, j) => j !== i) } })),
     inviteLink: () => set((prev) => ({ newGroup: { ...prev.newGroup, invited: true } })),
@@ -695,23 +854,39 @@ export default function App() {
         if (!nm) return {}
         const id = 'g' + Date.now()
         const grad = GRADIENTS[Object.keys(prev.groups).length % GRADIENTS.length]
-        const members = [{ id: 'dani', name: 'Dani (vos)', short: 'Dani', color: '#7C3AED', initial: 'D' }]
+        const members = [meMemberOf(prev)]
         prev.newGroup.members.forEach((mm, i) => {
-          members.push({ id: 'mem' + id + i, name: mm.name, short: mm.name.split(' ')[0], color: PALETTE[(i + 1) % PALETTE.length], initial: mm.name.trim()[0].toUpperCase() })
+          if (mm.id) {
+            // amigo existente: reusa su id/color/estado (no duplicar persona)
+            const p = personById(prev, mm.id)
+            const mem = { id: mm.id, name: p.name, short: p.short, color: p.color, initial: p.initial }
+            if (p.pending) mem.pending = true
+            if (p.email) mem.email = p.email
+            members.push(mem)
+          } else {
+            const mem = { id: 'mem' + id + i, name: mm.name, short: mm.name.split(' ')[0], color: PALETTE[(i + 1) % PALETTE.length], initial: mm.name.trim()[0].toUpperCase() }
+            if (mm.pending) mem.pending = true
+            if (mm.email) mem.email = mm.email
+            members.push(mem)
+          }
         })
         const split = {}
         const base = Math.floor(100 / members.length)
         let acc = 0
         members.forEach((mm, i) => { split[mm.id] = i === members.length - 1 ? 100 - acc : base; acc += base })
-        const group = { id, name: nm, initial: nm[0].toUpperCase(), gradient: grad, description: (prev.newGroup.desc || '').trim(), createdAt: '15 jun 2026', members }
+        const group = { id, name: nm, initial: nm[0].toUpperCase(), gradient: grad, description: (prev.newGroup.desc || '').trim(), createdAt: '15 jun 2026', isGroup: true, members }
+        const evDate = (prev.newGroup.date || '').trim()
+        if (evDate) group.eventDate = evDate
         return {
           groups: { ...prev.groups, [id]: group },
           splits: { ...prev.splits, [id]: split },
+          splitLog: { ...prev.splitLog, [id]: [] },
+          splitMeta: { ...prev.splitMeta, [id]: { from: '2000-01-01', at: null, by: null } },
           ledgers: { ...prev.ledgers, [id]: [] },
           threads: { ...prev.threads, [id]: [{ id: 'w' + id, role: 'app', kind: 'text', text: '¡Grupo creado! Cargá el primer gasto escribiéndolo acá.', time: nowTime() }] },
           payments: { ...prev.payments, [id]: [] },
           screen: 'chat', groupId: id, view: 'chat',
-          newGroup: { name: '', desc: '', members: [], memberName: '', invited: false },
+          newGroup: { name: '', desc: '', date: '', members: [], memberName: '', invited: false },
         }
       }),
   }
@@ -720,6 +895,7 @@ export default function App() {
   const screenEl = (
     <>
       {s.screen === 'chat' && <Chat s={s} actions={actions} typingName={typingName} />}
+      {s.screen === 'friend' && <Friend s={s} actions={actions} />}
       {s.screen === 'profile' && <Profile s={s} actions={actions} />}
       {s.screen === 'archived' && <Archived s={s} actions={actions} />}
       {s.screen === 'newgroup' && <NewGroup s={s} actions={actions} />}
@@ -770,14 +946,37 @@ export default function App() {
         <main style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden', background: s.screen === 'list' ? '#F4F6FA' : '#FBFCFE' }}>
           {s.screen === 'list' ? <EmptyState /> : screenEl}
         </main>
+        {s.addFriend && <AddFriend s={s} actions={actions} />}
+        {s.confirmUnpin && <UnpinConfirm s={s} actions={actions} />}
       </div>
     )
   }
 
   return (
-    <div style={{ height: 'var(--app-h, 100dvh)', display: 'flex', justifyContent: 'center', background: '#e6e9f2', overflow: 'hidden' }}>
-      <div style={{ position: 'relative', width: '100%', maxWidth: 460, height: 'var(--app-h, 100dvh)', background: '#FBFCFE', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', top: 'var(--app-top, 0px)', left: 0, right: 0, height: 'var(--app-h, 100dvh)', display: 'flex', justifyContent: 'center', background: '#e6e9f2', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', width: '100%', maxWidth: 460, height: '100%', background: '#FBFCFE', overflow: 'hidden' }}>
         {s.screen === 'list' ? <Inicio s={s} actions={actions} /> : screenEl}
+        {s.addFriend && <AddFriend s={s} actions={actions} />}
+        {s.confirmUnpin && <UnpinConfirm s={s} actions={actions} />}
+      </div>
+    </div>
+  )
+}
+
+/** Confirmación antes de desfijar (persona o grupo) del inicio. */
+function UnpinConfirm({ s, actions }) {
+  const ref = s.confirmUnpin
+  const name = ref.kind === 'group' ? (s.groups[ref.id] ? s.groups[ref.id].name : '') : personById(s, ref.id).short
+  return (
+    <div onClick={actions.cancelUnpin} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(15,23,42,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, animation: 'ccFade .15s ease' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 320, background: '#fff', borderRadius: 20, padding: '22px 20px', textAlign: 'center', boxShadow: '0 30px 60px -20px rgba(15,23,42,.5)' }}>
+        <div style={{ fontSize: 30, marginBottom: 8 }}>📌</div>
+        <div style={{ fontWeight: 800, fontSize: 16.5, color: '#0B1220' }}>¿Desfijar “{name}”?</div>
+        <div style={{ fontSize: 13, color: '#64748B', fontWeight: 600, marginTop: 4, lineHeight: 1.4 }}>Dejará de aparecer en el acceso rápido del inicio. Podés volver a fijarlo cuando quieras.</div>
+        <div style={{ display: 'flex', gap: 9, marginTop: 18 }}>
+          <button onClick={actions.cancelUnpin} style={{ flex: 1, border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontFamily: 'inherit', fontWeight: 800, fontSize: 14, padding: 12, borderRadius: 13, cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={actions.confirmUnpinYes} style={{ flex: 1, border: 'none', background: '#7C3AED', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 14, padding: 12, borderRadius: 13, cursor: 'pointer' }}>Desfijar</button>
+        </div>
       </div>
     </div>
   )

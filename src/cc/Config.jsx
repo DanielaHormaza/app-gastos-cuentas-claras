@@ -1,6 +1,6 @@
-import { Close, Plus, Archive } from './icons'
+import { Close, Plus, Archive, Pin } from './icons'
 import { fmtDateFull } from './dates'
-import { ledgerMonths } from './logic'
+import { ledgerMonths, isOneToOne, peerOf } from './logic'
 import { ExportBar } from './GroupViews'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
@@ -13,25 +13,63 @@ export default function Config({ s, actions }) {
   const sp = s.splits[gid] || {}
   const meta = (s.splitMeta && s.splitMeta[gid]) || {}
   const monthKeys = ledgerMonths(s, gid, true) // incluye meses de gastos futuros en el rango del export
+  const o2o = isOneToOne(s, gid) // ajustes de un espacio 1:1 (persona) vs un grupo
+  const peer = o2o ? peerOf(s, gid) : null
+  const pinKind = o2o ? 'person' : 'group'
+  const pinId = o2o && peer ? peer.id : gid
+  const pinned = (s.pinned || []).some((p) => p.kind === pinKind && p.id === pinId)
+  const pinFull = (s.pinned || []).length >= 2 && !pinned
 
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 14, background: '#F4F6FA', display: 'flex', flexDirection: 'column', animation: 'ccScr .26s cubic-bezier(.22,1,.36,1)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: '#fff', borderBottom: '1px solid #EEF1F6' }}>
         <div onClick={actions.closeConfig} style={{ width: 34, height: 34, borderRadius: '50%', background: '#F1F4F9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Close size={16} color="#64748B" /></div>
-        <span style={{ fontWeight: 800, fontSize: 16 }}>Ajustes del grupo</span>
+        <span style={{ fontWeight: 800, fontSize: 16 }}>{o2o ? 'Ajustes' : 'Ajustes del grupo'}</span>
         <span onClick={actions.closeConfig} style={{ fontWeight: 800, fontSize: 14, color: '#7C3AED', cursor: 'pointer' }}>Guardar</span>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {/* foto + nombre + descripción */}
-        <div style={{ ...sectionCard, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div onClick={actions.onChangePhoto} className="num" style={{ position: 'relative', width: 56, height: 56, borderRadius: 16, background: g.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,.92)', fontWeight: 800, fontSize: 22, flexShrink: 0, cursor: 'pointer' }}>
-            {g.initial}
-            <div style={{ position: 'absolute', bottom: -4, right: -4, width: 22, height: 22, borderRadius: '50%', background: '#7C3AED', border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff' }}>✎</div>
+        {/* foto + nombre + descripción (grupo) · o persona + "amigos desde" (1:1) */}
+        {o2o && peer ? (
+          <div style={{ ...sectionCard, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: peer.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 22, flexShrink: 0 }}>{peer.initial}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220' }}>{peer.short}</div>
+              <div style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600, marginTop: 2 }}>{peer.pending ? 'Invitación pendiente' : 'Amigos desde ' + (g.createdAt || '—')}</div>
+            </div>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <input value={g.name} onChange={(e) => actions.onGroupName(e.target.value)} style={{ border: 'none', outline: 'none', fontWeight: 800, fontSize: 16, color: '#0B1220', width: '100%', background: 'transparent', fontFamily: 'inherit' }} />
-            <input value={g.description || ''} onChange={(e) => actions.onGroupDesc(e.target.value)} placeholder="Agregá una descripción…" style={{ border: 'none', outline: 'none', fontSize: 11.5, color: '#94A3B8', fontWeight: 600, width: '100%', background: 'transparent', marginTop: 2, fontFamily: 'inherit' }} />
+        ) : (
+          <div style={{ ...sectionCard, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div onClick={actions.onChangePhoto} className="num" style={{ position: 'relative', width: 56, height: 56, borderRadius: 16, background: g.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,.92)', fontWeight: 800, fontSize: 22, flexShrink: 0, cursor: 'pointer' }}>
+              {g.initial}
+              <div style={{ position: 'absolute', bottom: -4, right: -4, width: 22, height: 22, borderRadius: '50%', background: '#7C3AED', border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff' }}>✎</div>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <input value={g.name} onChange={(e) => actions.onGroupName(e.target.value)} style={{ border: 'none', outline: 'none', fontWeight: 800, fontSize: 16, color: '#0B1220', width: '100%', background: 'transparent', fontFamily: 'inherit' }} />
+              <input value={g.description || ''} onChange={(e) => actions.onGroupDesc(e.target.value)} placeholder="Agregá una descripción…" style={{ border: 'none', outline: 'none', fontSize: 11.5, color: '#94A3B8', fontWeight: 600, width: '100%', background: 'transparent', marginTop: 2, fontFamily: 'inherit' }} />
+            </div>
+          </div>
+        )}
+
+        {/* fecha del evento (solo grupos) + fijar en el inicio */}
+        <div style={sectionCard}>
+          {!o2o && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '4px 0' }}>
+                <span style={{ fontWeight: 800, fontSize: 13, color: '#64748B' }}>📅 Fecha del evento</span>
+                <input type="date" value={g.eventDate || ''} onChange={(e) => actions.onGroupDate(e.target.value)} style={{ border: '1.5px solid #E2E8F0', borderRadius: 10, padding: '7px 10px', outline: 'none', fontWeight: 700, fontSize: 13, color: '#0B1220', fontFamily: 'inherit' }} />
+              </div>
+              <div style={{ height: 1, background: '#F1F4F9', margin: '8px 0' }} />
+            </>
+          )}
+          <div
+            onClick={() => (pinFull ? null : actions.togglePin(pinKind, pinId))}
+            style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '7px 0', cursor: pinFull ? 'default' : 'pointer', opacity: pinFull ? 0.5 : 1 }}
+          >
+            <Pin size={17} filled={pinned} color={pinned ? '#7C3AED' : '#64748B'} />
+            <span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: pinned ? '#7C3AED' : '#334155' }}>
+              {pinned ? 'Fijado en el inicio · tocá para desfijar' : pinFull ? 'Fijar en el inicio (máx. 2)' : 'Fijar en el inicio'}
+            </span>
           </div>
         </div>
 
@@ -95,14 +133,16 @@ export default function Config({ s, actions }) {
 
         {/* acciones */}
         <div style={{ background: '#fff', borderRadius: 16, padding: '4px 12px', boxShadow: cardShadow }}>
-          <div onClick={actions.onArchive} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', borderBottom: '1px solid #F1F4F9', cursor: 'pointer' }}>
-            <Archive size={17} color="#D97706" /><span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#B45309' }}>Archivar grupo</span>
-          </div>
           <div onClick={actions.onArchive} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', cursor: 'pointer' }}>
-            <Archive size={17} color="#E11D5B" /><span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#E11D5B' }}>Salir del grupo</span>
+            <Archive size={17} color="#D97706" /><span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#B45309' }}>{o2o ? 'Archivar 1:1' : 'Archivar grupo'}</span>
           </div>
+          {!o2o && (
+            <div onClick={actions.onArchive} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', borderTop: '1px solid #F1F4F9', cursor: 'pointer' }}>
+              <Archive size={17} color="#E11D5B" /><span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#E11D5B' }}>Salir del grupo</span>
+            </div>
+          )}
         </div>
-        <div style={{ textAlign: 'center', fontSize: 11.5, color: '#B6BFCC', fontWeight: 700, padding: '2px 0 6px' }}>Grupo creado el {g.createdAt || '—'}</div>
+        <div style={{ textAlign: 'center', fontSize: 11.5, color: '#B6BFCC', fontWeight: 700, padding: '2px 0 6px' }}>{o2o ? 'Amigos desde ' + (g.createdAt || '—') : 'Grupo creado el ' + (g.createdAt || '—')}</div>
       </div>
     </div>
   )

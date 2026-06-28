@@ -1,5 +1,6 @@
 import { Back, Plus, Close, Check } from './icons'
 import { BRAND_GRADIENT, PALETTE } from './initialState'
+import { friendIds, personById, personColor } from './logic'
 
 const sectionLabel = { fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', marginBottom: 6 }
 const inputStyle = { border: '1.5px solid #E7EAF1', borderRadius: 13, padding: '12px 14px', outline: 'none', color: '#0B1220', width: '100%', fontFamily: 'inherit', boxSizing: 'border-box' }
@@ -7,6 +8,13 @@ const inputStyle = { border: '1.5px solid #E7EAF1', borderRadius: 13, padding: '
 /** Crear un grupo nuevo: nombre, descripción, participantes, invitar. */
 export default function NewGroup({ s, actions }) {
   const ng = s.newGroup
+  const me = s.me || 'dani'
+  const q = (ng.memberName || '').trim().toLowerCase()
+  const addedIds = new Set(ng.members.filter((m) => m.id).map((m) => m.id))
+  // Sugerencias: amigos ya cargados que matchean lo que escribís y no están agregados.
+  const suggestions = q
+    ? friendIds(s).map((pid) => personById(s, pid)).filter((p) => p.id !== me && !addedIds.has(p.id) && ((p.short || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q)))
+    : []
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#FBFCFE', animation: 'ccIn .26s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 16px', borderBottom: '1px solid #EEF1F6' }}>
@@ -28,6 +36,9 @@ export default function NewGroup({ s, actions }) {
         <div style={sectionLabel}>DESCRIPCIÓN (OPCIONAL)</div>
         <input value={ng.desc} onChange={(e) => actions.onNewGroupField('desc', e.target.value)} placeholder="¿De qué son estos gastos?" style={{ ...inputStyle, fontWeight: 600, fontSize: 14, marginBottom: 18 }} />
 
+        <div style={sectionLabel}>FECHA DEL VIAJE / EVENTO (OPCIONAL)</div>
+        <input type="date" value={ng.date || ''} onChange={(e) => actions.onNewGroupField('date', e.target.value)} style={{ ...inputStyle, fontWeight: 700, fontSize: 14, marginBottom: 18, color: ng.date ? '#0B1220' : '#94A3B8' }} />
+
         <div style={sectionLabel}>PARTICIPANTES</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 4px' }}>
           <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#7C3AED', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>D</div>
@@ -36,14 +47,32 @@ export default function NewGroup({ s, actions }) {
         </div>
         {ng.members.map((m, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 4px' }}>
-            <div style={{ width: 34, height: 34, borderRadius: '50%', background: PALETTE[(i + 1) % PALETTE.length], color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{(m.name.trim()[0] || '?').toUpperCase()}</div>
-            <span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: '#0B1220' }}>{m.name}</span>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: m.id ? personColor(s, m.id) : PALETTE[(i + 1) % PALETTE.length], color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{((m.short || m.name || '?').trim()[0] || '?').toUpperCase()}</div>
+            <span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: '#0B1220' }}>{m.short || m.name}</span>
+            {m.pending && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#B5742F', background: '#FBF1E3', padding: '3px 8px', borderRadius: 999 }}>A invitar</span>}
             <div onClick={() => actions.removeNewGroupMember(i)} style={{ width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Close size={15} color="#E11D5B" /></div>
           </div>
         ))}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 14px' }}>
-          <input value={ng.memberName} onChange={(e) => actions.onNewGroupField('memberName', e.target.value)} onKeyDown={(e) => e.key === 'Enter' && actions.addNewGroupMember()} placeholder="Nombre del participante" style={{ ...inputStyle, flex: 1, padding: '10px 12px', borderRadius: 11, fontWeight: 700, fontSize: 13.5 }} />
-          <button onClick={actions.addNewGroupMember} style={{ border: 'none', background: '#0B1220', color: '#fff', borderRadius: 11, padding: '10px 15px', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}>Agregar</button>
+        <div style={{ position: 'relative', margin: '6px 0 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input value={ng.memberName} onChange={(e) => actions.onNewGroupField('memberName', e.target.value)} onKeyDown={(e) => e.key === 'Enter' && actions.addNewGroupMember()} placeholder="Buscá un amigo o escribí un nombre" style={{ ...inputStyle, flex: 1, padding: '10px 12px', borderRadius: 11, fontWeight: 700, fontSize: 13.5 }} />
+            <button onClick={actions.addNewGroupMember} style={{ border: 'none', background: '#0B1220', color: '#fff', borderRadius: 11, padding: '10px 15px', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}>Agregar</button>
+          </div>
+          {q && (
+            <div style={{ marginTop: 6, background: '#fff', border: '1px solid #EEF1F6', borderRadius: 13, boxShadow: '0 12px 30px -14px rgba(15,23,42,.35)', overflow: 'hidden' }}>
+              {suggestions.map((p) => (
+                <div key={p.id} onClick={() => actions.addExistingFriendToGroup(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', cursor: 'pointer' }}>
+                  <div style={{ width: 30, height: 30, borderRadius: '50%', background: personColor(s, p.id), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{p.initial}</div>
+                  <span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#0B1220' }}>{p.short}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: p.pending ? '#B5742F' : '#0E9F86', background: p.pending ? '#FBF1E3' : '#E6F6F1', padding: '3px 8px', borderRadius: 999 }}>{p.pending ? 'Pendiente' : 'En la app'}</span>
+                </div>
+              ))}
+              <div onClick={actions.addNewGroupMember} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderTop: suggestions.length ? '1px solid #F1F4F9' : 'none' }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#F1F4F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Plus size={16} /></div>
+                <span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#475569' }}>Sumar a “{ng.memberName.trim()}” e invitar</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {ng.invited ? (

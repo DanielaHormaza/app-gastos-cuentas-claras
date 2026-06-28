@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, byRecency, TONE } from './logic'
+import { useEffect, useRef, Fragment } from 'react'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
-import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, Eye, EyeOff } from './icons'
+import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin } from './icons'
 import { Futuros, Historicos } from './GroupViews'
 import { Filters } from './CategoryFilter'
 import Config from './Config'
@@ -23,10 +23,19 @@ export default function Chat({ s, actions, typingName }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const c = compute(s, gid)
-  const lines = balanceLines(s, gid)
   const readOnly = !!s.archived[gid]
-  const bannerLabel = g.personal ? 'Gastado' : 'En este grupo'
-  const inputHint = g.personal ? 'Anotá un gasto tuyo… ej: 3000 café' : 'Escribí un gasto… ej: 8000 nafta pagó Juan'
+  // Espacio 1:1: se muestra con el nombre de la persona (sin nombre de grupo) y el saldo/movimientos
+  // se AGREGAN con todo lo compartido con ella (1:1 + grupos en común).
+  const is1to1 = isOneToOne(s, gid)
+  const peer = is1to1 ? peerOf(s, gid) : null
+  // Banner: personal = total gastado (tuyo + tu parte en grupos); 1:1 = saldo con la persona; grupo = quién le debe a quién.
+  const personalLines = () => {
+    const ps = personalSpent(s)
+    return ps.length ? ps.map(([cur, v]) => ({ pre: '', amount: fmt(v, cur), post: '', color: '#0B1220' })) : [{ pre: '', amount: fmt(0), post: '', color: '#0B1220' }]
+  }
+  const lines = g.personal ? personalLines() : is1to1 && peer ? friendBalanceLines(s, peer.id) : groupBalanceLines(s, gid)
+  const bannerLabel = g.personal ? 'Gastado' : is1to1 ? 'Entre vos y ' + (peer ? peer.short : '') : 'En este grupo'
+  const inputHint = g.personal ? 'Anotá un gasto tuyo… ej: 3000 café' : is1to1 ? 'Cargá un gasto con ' + (peer ? peer.short : '') + '… ej: 2000 café pagué yo' : 'Escribí un gasto… ej: 8000 nafta pagó Juan'
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#F4F6FA', animation: 'ccIn .26s ease' }}>
@@ -35,12 +44,26 @@ export default function Chat({ s, actions, typingName }) {
         <div onClick={actions.back} style={{ width: 38, height: 38, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}><Back /></div>
         <div onClick={actions.toggleMenu} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 14px', borderRadius: 999, background: '#F4F6FA' }}>
-            <div style={{ width: 24, height: 24, borderRadius: 8, background: g.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 11 }}>{g.initial}</div>
-            <span style={{ fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{g.name}</span>
+            {is1to1 && peer ? (
+              <div style={{ width: 24, height: 24, borderRadius: '50%', background: personColor(s, peer.id), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 11 }}>{peer.initial}</div>
+            ) : (
+              <div style={{ width: 24, height: 24, borderRadius: 8, background: g.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 11 }}>{g.initial}</div>
+            )}
+            <span style={{ fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{is1to1 && peer ? peer.short : g.name}</span>
             <ChevronDown />
           </div>
           <span style={{ fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{VIEW_TITLES[s.view] || ''}</span>
         </div>
+        {!g.personal && (() => {
+          const pk = is1to1 ? 'person' : 'group'
+          const pidv = is1to1 && peer ? peer.id : gid
+          const isPinned = (s.pinned || []).some((p) => p.kind === pk && p.id === pidv)
+          return (
+            <div onClick={() => actions.togglePin(pk, pidv)} title={isPinned ? 'Quitar de fijados' : 'Fijar en el inicio'} style={{ width: 38, height: 38, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
+              <Pin size={18} filled={isPinned} color={isPinned ? '#7C3AED' : '#94A3B8'} />
+            </div>
+          )
+        })()}
         <div onClick={actions.openConfig} style={{ width: 38, height: 38, borderRadius: '50%', background: '#F1F4F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}><Gear /></div>
       </div>
 
@@ -48,12 +71,16 @@ export default function Chat({ s, actions, typingName }) {
       {s.menuOpen && <ViewMenu s={s} actions={actions} />}
 
       {s.view === 'chat' && (
-        <ChatView s={s} g={g} c={c} bannerLabel={bannerLabel} lines={lines} inputHint={inputHint} readOnly={readOnly} actions={actions} typingName={typingName} />
+        <ChatView s={s} g={g} c={c} is1to1={is1to1} peer={peer} bannerLabel={bannerLabel} lines={lines} inputHint={inputHint} readOnly={readOnly} actions={actions} typingName={typingName} />
       )}
 
       {s.settleOpen && !g.personal && <SettleSheet s={s} actions={actions} />}
       {s.view === 'ledger' && (
-        <LedgerView s={s} g={g} c={c} bannerLabel={g.personal ? 'Gastado' : 'Saldo en el grupo'} lines={lines} actions={actions} />
+        is1to1 && peer
+          ? <FriendLedger s={s} peer={peer} lines={lines} actions={actions} />
+          : g.personal
+            ? <PersonalLedger s={s} lines={lines} actions={actions} />
+            : <LedgerView s={s} g={g} c={c} bannerLabel={'Saldo en el grupo'} lines={lines} actions={actions} />
       )}
       {s.view === 'months' && <Futuros s={s} actions={actions} />}
       {s.view === 'hist' && <Historicos s={s} actions={actions} />}
@@ -65,6 +92,7 @@ export default function Chat({ s, actions, typingName }) {
 }
 
 function ViewMenu({ s, actions }) {
+  const peer = isOneToOne(s, s.groupId) ? peerOf(s, s.groupId) : null
   const items = [
     { view: 'chat', emoji: '💬', bg: '#F1ECFD', title: 'Chat', sub: 'Cargar gastos' },
     { view: 'ledger', emoji: '📆', bg: '#E7F0FE', title: 'Movimientos diarios', sub: 'Tocá un gasto para editarlo' },
@@ -76,6 +104,19 @@ function ViewMenu({ s, actions }) {
     <>
       <div onClick={actions.closeMenu} style={{ position: 'absolute', inset: 0, zIndex: 8 }} />
       <div style={{ position: 'absolute', top: 76, left: '50%', transform: 'translateX(-50%)', width: 258, background: '#fff', borderRadius: 18, padding: 8, zIndex: 9, boxShadow: '0 18px 44px -16px rgba(15,23,42,.45)', border: '1px solid #EEF1F6', animation: 'ccFade .15s ease' }}>
+        {peer && (
+          <>
+            <div onClick={() => actions.openFriend(peer.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 11px', borderRadius: 13, cursor: 'pointer' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: '#EAF8F3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>👤</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: '#0B1220' }}>Ver perfil de {peer.short}</div>
+                <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 600 }}>Saldo total y grupos en común</div>
+              </div>
+              <Chevron size={16} />
+            </div>
+            <div style={{ height: 1, background: '#F1F4F9', margin: '4px 8px' }} />
+          </>
+        )}
         {items.map((it) => (
           <div key={it.view} onClick={() => actions.goView(it.view)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 11px', borderRadius: 13, cursor: 'pointer' }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: it.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{it.emoji}</div>
@@ -86,13 +127,31 @@ function ViewMenu({ s, actions }) {
             {s.view === it.view && <Check size={16} />}
           </div>
         ))}
+        {!s.groups[s.groupId].personal && (() => {
+          const pk = peer ? 'person' : 'group'
+          const pidv = peer ? peer.id : s.groupId
+          const isPinned = (s.pinned || []).some((p) => p.kind === pk && p.id === pidv)
+          return (
+            <>
+              <div style={{ height: 1, background: '#F1F4F9', margin: '4px 8px' }} />
+              <div onClick={() => actions.togglePin(pk, pidv)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 11px', borderRadius: 13, cursor: 'pointer' }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: isPinned ? '#F1ECFD' : '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Pin size={16} filled={isPinned} color={isPinned ? '#7C3AED' : '#64748B'} /></div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: '#0B1220' }}>{isPinned ? 'Quitar de fijados' : 'Fijar en el inicio'}</div>
+                  <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 600 }}>{isPinned ? 'Sacar del acceso rápido' : 'Acceso rápido arriba de todo'}</div>
+                </div>
+              </div>
+            </>
+          )
+        })()}
       </div>
     </>
   )
 }
 
-function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions, typingName }) {
+function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOnly, actions, typingName }) {
   const gid = g.id
+  const meName = s.profile.name
   const scrollRef = useRef(null)
   const taRef = useRef(null)
   const thread = s.threads[gid] || []
@@ -120,6 +179,17 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions, t
     }
   }
 
+  // Hilo combinado: mensajes propios del espacio + (en un 1:1) gastos compartidos que VIENEN de otros
+  // grupos (etiquetados con su origen), ordenados por fecha. Agrupados por día.
+  const num = (id) => { const m = String(id || '').match(/\d+/); return m ? Number(m[0]) : 0 }
+  // En "Mis gastos" se inyecta tu parte de los gastos de grupos; en un 1:1, lo compartido de otros grupos.
+  const xExps = g.personal ? myShareExpenses(s) : is1to1 && peer ? computeFriend(s, peer.id).expenses.filter((e) => !e.direct) : []
+  const items = [
+    ...thread.map((m) => ({ t: 'msg', date: m.date || todayISO(), key: num(m.id), m })),
+    ...xExps.map((e) => ({ t: 'x', date: e.date, key: num(e.id), e })),
+  ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.key - b.key))
+  const dayDivider = (date) => (date === todayISO() ? 'HOY' : fmtDateFull(date).toUpperCase())
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* banner de saldo */}
@@ -136,17 +206,48 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions, t
         </div>
       </div>
 
+      {/* invitación: persona del 1:1 que todavía no está en la app */}
+      {is1to1 && peer && peer.pending && (
+        <div style={{ margin: '6px 16px 0', borderRadius: 14, padding: '10px 13px', background: '#FBF4E8', border: '1px solid #F3E0BE', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>📩</span>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: '#9A621F' }}>{peer.short} todavía no usa la app. Cuando entre con el enlace, ve todo este historial.</div>
+          <button onClick={() => actions.copyInvite(peer.id)} style={{ border: 'none', background: s.inviteCopied === peer.id ? '#0E9F86' : '#9A621F', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 11.5, padding: '8px 11px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.inviteCopied === peer.id ? '¡Copiado!' : 'Copiar enlace'}</button>
+        </div>
+      )}
+
       {/* hilo */}
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 14px 12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>HOY</div>
-          {thread.map((m) => {
+          {items.length === 0 && <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>HOY</div>}
+          {items.map((it, i) => {
+            const prev = items[i - 1]
+            const showDay = !prev || prev.date !== it.date
+            const senderOf = (x) => (!x ? null : x.t === 'x' ? 'x' : x.m.kind === 'user' ? x.m.by || meName : 'app')
+            if (it.t === 'x') {
+              return (
+                <Fragment key={'x' + it.e.gid + it.e.id}>
+                  {showDay && <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>{dayDivider(it.date)}</div>}
+                  <XExpenseCard e={it.e} s={s} actions={actions} />
+                </Fragment>
+              )
+            }
+            const m = it.m
             const ts = m.time ? (m.date ? fmtDateDow(m.date) + ' · ' + m.time : m.time) : ''
+            const isOwn = m.kind === 'user' && (!m.by || m.by === meName)
+            const isPeer = m.kind === 'user' && m.by && m.by !== meName
+            const showSender = isPeer && senderOf(prev) !== senderOf(it)
             return (
-              <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.kind === 'user' ? 'flex-end' : 'flex-start' }}>
-                <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} />
-                {ts && <div style={{ fontSize: 9.5, fontWeight: 700, color: '#B6BFCC', padding: '3px 6px 0' }}>{m.by ? m.by + ' · ' : ''}{ts}</div>}
-              </div>
+              <Fragment key={m.id}>
+                {showDay && <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>{dayDivider(it.date)}</div>}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+                  {isPeer ? (
+                    <PeerMessage m={m} s={s} g={g} showSender={showSender} />
+                  ) : (
+                    <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} />
+                  )}
+                  {ts && <div style={{ fontSize: 9.5, fontWeight: 700, color: '#B6BFCC', padding: '3px 6px 0' }}>{!isPeer && m.by ? m.by + ' · ' : ''}{ts}</div>}
+                </div>
+              </Fragment>
             )
           })}
         </div>
@@ -342,6 +443,56 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
   return null
 }
 
+/** Burbuja entrante de otra persona (estilo WhatsApp): avatar + nombre con color
+ * único, solo en el primer mensaje de una tanda; los siguientes alinean con un spacer. */
+function PeerMessage({ m, s, g, showSender }) {
+  const mem = g.members.find((x) => x.short === m.by || x.name === m.by) || { id: m.by, initial: (m.by || '?')[0].toUpperCase(), short: m.by }
+  const color = personColor(s, mem.id)
+  return (
+    <div style={{ alignSelf: 'flex-start', maxWidth: '84%', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+      {showSender ? (
+        <div style={{ width: 28, height: 28, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: 12, fontWeight: 800 }}>{mem.initial}</div>
+      ) : (
+        <div style={{ width: 28, flexShrink: 0 }} />
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        {showSender && <span style={{ fontSize: 11.5, fontWeight: 800, color, paddingLeft: 3 }}>{mem.short}</span>}
+        <div style={{ background: '#fff', border: '1px solid #EAEEF4', borderRadius: showSender ? '4px 16px 16px 16px' : '16px', padding: '9px 13px', fontSize: 13.5, fontWeight: 600, color: '#334155', boxShadow: '0 6px 18px -12px rgba(15,23,42,.35)' }}>{m.text}</div>
+      </div>
+    </div>
+  )
+}
+
+/** Tarjeta de un gasto que VIENE de otro grupo, mostrada dentro del chat 1:1.
+ * Se distingue visualmente (borde punteado + chip "↗ grupo") y muestra el impacto en tu saldo. */
+function XExpenseCard({ e, s, actions }) {
+  const me = s.me || 'dani'
+  const impColor = Math.abs(e.delta) < 1 ? '#94A3B8' : e.delta > 0 ? TONE.pos : TONE.neg
+  const impText = Math.abs(e.delta) < 1 ? '' : (e.delta > 0 ? '+' : '−') + fmt(Math.abs(e.delta), e.cur)
+  const payerText = e.transfer ? 'Transferencia' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || '')
+  return (
+    <div onClick={() => actions.openLedgerOf(e.gid)} style={{ alignSelf: 'flex-start', maxWidth: '92%', display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer' }}>
+      <div style={{ width: 28, height: 28, borderRadius: 8, background: e.ggrad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: 11, fontWeight: 800, marginTop: 2 }}>{e.ginitial}</div>
+      <div style={{ background: '#F8F6FF', border: '1px dashed #D9CEF6', borderRadius: '14px 14px 14px 4px', padding: '10px 13px', minWidth: 210 }}>
+        <div style={{ marginBottom: 8 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: '#7C3AED', background: '#F1ECFD', padding: '2px 8px', borderRadius: 999 }}>↗ {e.gname}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 9, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>{e.catIcon}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 13.5, color: '#0B1220' }}>{e.catName}</div>
+            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>{payerText}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div className="num" style={{ fontWeight: 700, fontSize: 14.5, color: '#0B1220' }}>{fmt(e.amount, e.cur)}</div>
+            {impText && <div style={{ fontSize: 10.5, fontWeight: 800, color: impColor }}>{impText}</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Saldo en una o varias monedas. Monto SIEMPRE en neutro; el color va en un
  * pequeño indicador (punto) + el texto del estado, no en el monto. */
 export function BalanceLines({ lines, size = 16 }) {
@@ -428,7 +579,7 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={actions.toggleHideAmounts} title={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} aria-label={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} style={{ border: 'none', background: 'transparent', padding: 2, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
-            {s.hideAmounts ? <EyeOff size={18} color="#64748B" /> : <Eye size={18} color="#64748B" />}
+            <EyeToggle size={18} color="#64748B" hidden={s.hideAmounts} />
           </button>
           <div className="num" style={{ fontWeight: 700, fontSize: 22, color: arrowColor }}>{arrow}</div>
         </div>
@@ -438,11 +589,15 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
         {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '16px 0' }}>Sin movimientos que coincidan.</div>}
         {order.map((k) => {
           const dp = daniPctAt(s, gid, dayDate[k])
+          // Encabezado del día con el reparto vigente: 2 personas → "Vos X% · Otro Y%"; 3+ → todos.
+          const splitText = g.members.length === 2
+            ? meShort + ' ' + dp + '% · ' + c.other.short + ' ' + (100 - dp) + '%'
+            : g.members.map((m) => m.short + ' ' + ((splitAt(s, gid, dayDate[k]) || {})[m.id] || 0) + '%').join(' · ')
           return (
           <div key={k} style={{ display: 'contents' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, padding: '8px 4px 2px' }}>
               <span style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em' }}>{k}</span>
-              {!g.personal && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#C3CCDA', whiteSpace: 'nowrap' }}>{meShort} {dp}% · {c.other.short} {100 - dp}%</span>}
+              {!g.personal && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#C3CCDA' }}>{splitText}</span>}
             </div>
             {byDay[k].map((it) => (
               <div key={it.entry.id} onClick={() => actions.openEdit(it.entry)} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>
@@ -463,6 +618,123 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
           </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+/** "Mis gastos" en detalle: tus gastos personales + tu parte de cada grupo (etiquetada),
+ * agrupados por día. Los personales se editan; los de grupo saltan a su grupo. */
+function PersonalLedger({ s, lines, actions }) {
+  const me = s.me || 'dani'
+  const rows = []
+  ;(s.ledgers.personal || []).forEach((e) => {
+    if (e.future || e.kind === 'transfer') return
+    const cat = catById(s, e.categoryId)
+    rows.push({ id: e.id, gid: 'personal', own: true, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, sub: 'Personal', amountText: fmt(e.amount, e.currency || 'ARS'), impText: '', impColor: '#94A3B8', entry: e })
+  })
+  myShareExpenses(s).forEach((e) => {
+    rows.push({ id: e.id, gid: e.gid, own: false, gname: e.gname, date: e.date, catIcon: e.catIcon, title: e.catName, sub: e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''), amountText: fmt(e.amount, e.cur), impText: '−' + fmt(-e.delta, e.cur), impColor: TONE.neg })
+  })
+  rows.sort(byRecency)
+  const order = []
+  const byDay = {}
+  rows.forEach((r) => { const k = fmtDateFull(r.date); if (!byDay[k]) { byDay[k] = []; order.push(k) } byDay[k].push(r) })
+  const onRow = (r) => { if (r.own) actions.openEdit(r.entry); else actions.openLedgerOf(r.gid) }
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
+      <div style={{ margin: '14px 16px 6px', borderRadius: 16, padding: '13px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>Gastado · vos + tu parte</div>
+          <BalanceLines lines={lines} size={15} />
+        </div>
+        <button onClick={actions.toggleHideAmounts} title={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} aria-label={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} style={{ border: 'none', background: 'transparent', padding: 2, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+          <EyeToggle size={18} color="#64748B" hidden={s.hideAmounts} />
+        </button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '16px 0' }}>Todavía no hay gastos.</div>}
+        {order.map((k) => (
+          <div key={k} style={{ display: 'contents' }}>
+            <div style={{ padding: '8px 4px 2px' }}><span style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em' }}>{k.toUpperCase()}</span></div>
+            {byDay[k].map((it) => (
+              <div key={it.gid + it.id} onClick={() => onRow(it)} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{it.catIcon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{it.title}</div>
+                  <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                    {!it.own && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{it.gname}</span>}{it.sub}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{it.amountText}</div>
+                  {it.impText && <div style={{ fontSize: 11, fontWeight: 800, color: it.impColor }}>{it.impText}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Movimientos AGREGADOS de un 1:1: todo lo compartido con la persona (1:1 + grupos en común),
+ * cada fila con el chip de su grupo de origen. Tocar un gasto del propio 1:1 lo edita;
+ * uno de otro grupo salta a los movimientos de ese grupo para editarlo ahí. */
+function FriendLedger({ s, peer, lines, actions }) {
+  const { order, byDay } = friendMovementsByDay(s, peer.id)
+  const fc = computeFriend(s, peer.id)
+  const netArs = fc.nets.ARS || 0
+  const arrow = netArs > 1 ? '↑' : netArs < -1 ? '↓' : '='
+  const arrowColor = netArs > 1 ? TONE.pos : netArs < -1 ? TONE.neg : '#94A3B8'
+  const onRow = (it) => {
+    if (it.gid === s.groupId) { const e = (s.ledgers[it.gid] || []).find((x) => x.id === it.id); if (e) actions.openEdit(e) }
+    else actions.openLedgerOf(it.gid)
+  }
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
+      <div style={{ margin: '14px 16px 6px', borderRadius: 16, padding: '13px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>Entre vos y {peer.short}</div>
+          <BalanceLines lines={lines} size={15} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={actions.toggleHideAmounts} title={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} aria-label={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} style={{ border: 'none', background: 'transparent', padding: 2, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+            <EyeToggle size={18} color="#64748B" hidden={s.hideAmounts} />
+          </button>
+          <div className="num" style={{ fontWeight: 700, fontSize: 22, color: arrowColor }}>{arrow}</div>
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {order.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '28px 16px', color: '#B6BFCC' }}>
+            <div style={{ fontSize: 26, marginBottom: 8 }}>🤝</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#64748B' }}>Sin gastos compartidos con {peer.short} aún</div>
+          </div>
+        )}
+        {order.map((k) => (
+          <div key={k} style={{ display: 'contents' }}>
+            <div style={{ padding: '8px 4px 2px' }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em' }}>{k.toUpperCase()}</span>
+            </div>
+            {byDay[k].map((it) => (
+              <div key={it.id} onClick={() => onRow(it)} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{it.catIcon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{it.title}</div>
+                  <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                    {it.showChip && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{it.gname}</span>}{it.payerText}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{it.amountText}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: it.impColor }}>{it.impText}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   )

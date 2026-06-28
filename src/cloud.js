@@ -24,6 +24,31 @@ export async function cloudUpsertCategory(c) {
   if (error) console.error('[upsertCategory]', error.message)
 }
 
+// ----- Grupos y miembros -----
+const groupRow = (g) => ({
+  id: g.id, name: g.name, initial: g.initial, gradient: g.gradient, description: g.description || null,
+  personal: !!g.personal, is_group: !!g.isGroup, direct: !!g.direct, event_date: g.eventDate || null,
+})
+// Crear un grupo nuevo (o 1:1): usa la función security definer (resuelve el RLS huevo-gallina).
+// creatorKey = member_key del usuario logueado, para que quede vinculado y RLS lo deje entrar.
+export async function cloudCreateGroup(group, members, creatorKey) {
+  const mems = (members || []).map((m) => ({ member_key: m.id, name: m.name, short: m.short, color: m.color, initial: m.initial, email: m.email || null }))
+  const { error } = await supabase.rpc('create_group', { g: groupRow(group), mems, creator_key: creatorKey })
+  if (error) console.error('[createGroup]', error.message)
+}
+// Actualizar datos de un grupo existente (nombre, foto, fecha del evento…). RLS: ya sos miembro.
+export async function cloudUpsertGroup(group) {
+  const { error } = await supabase.from('groups').upsert(groupRow(group))
+  if (error) console.error('[upsertGroup]', error.message)
+}
+// Alta/edición de un miembro en un grupo donde ya sos miembro (no toca user_id: lo reclama su dueño al loguearse).
+export async function cloudUpsertMember(m, gid) {
+  const { error } = await supabase
+    .from('group_members')
+    .upsert({ group_id: gid, member_key: m.id, name: m.name, short: m.short, color: m.color, initial: m.initial, email: m.email || null }, { onConflict: 'group_id,member_key' })
+  if (error) console.error('[upsertMember]', error.message)
+}
+
 // Chat compartido: solo se sincronizan los mensajes "de historial" (user/saved).
 const toMsgRow = (m, gid) => ({
   id: m.id, group_id: gid, role: m.role || null, kind: m.kind, text: m.text || null,
@@ -64,12 +89,16 @@ export async function loadCloudState(userId) {
   // grupos + miembros (el primero insertado = "ancla" para los modos full)
   const groups = {}
   for (const g of groupsR.data) {
-    groups[g.id] = { id: g.id, name: g.name, initial: g.initial, gradient: g.gradient, description: g.description, personal: !!g.personal, createdAt: g.created_at, members: [] }
+    groups[g.id] = { id: g.id, name: g.name, initial: g.initial, gradient: g.gradient, description: g.description, personal: !!g.personal, isGroup: !!g.is_group, direct: !!g.direct, eventDate: g.event_date || undefined, createdAt: g.created_at, members: [] }
   }
   let me = 'dani'
   for (const m of membersR.data) {
     if (!groups[m.group_id]) continue
-    groups[m.group_id].members.push({ id: m.member_key, name: m.name, short: m.short, color: m.color, initial: m.initial })
+    // pendiente = tiene email pero todavía nadie reclamó el slot (sin cuenta vinculada)
+    const mem = { id: m.member_key, name: m.name, short: m.short, color: m.color, initial: m.initial }
+    if (m.email) mem.email = m.email
+    if (m.email && !m.user_id) mem.pending = true
+    groups[m.group_id].members.push(mem)
     if (m.user_id && m.user_id === userId) me = m.member_key
   }
 

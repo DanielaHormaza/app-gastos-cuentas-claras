@@ -43,6 +43,33 @@ export const Eye = ({ size = 18, color = '#64748B', w = 2.2 }) => (
 export const EyeOff = ({ size = 18, color = '#64748B', w = 2.2 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 7 11 7a9.12 9.12 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24M1 1l22 22" /></svg>
 )
+// Ojo que se CIERRA como un párpado (blink) al ocultar montos, en vez de cambiar de ícono.
+// `hidden` = montos ocultos → el párpado baja: el globo se aplana y aparece la línea + pestañas.
+export const EyeToggle = ({ size = 18, color = '#64748B', w = 2.2, hidden = false }) => {
+  const tr = 'transform .34s cubic-bezier(.4,0,.2,1), opacity .26s ease'
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, overflow: 'visible' }}>
+      {/* globo del ojo: se aplana hacia el centro al cerrar */}
+      <g style={{ transition: tr, transformOrigin: '12px 12px', transform: hidden ? 'scaleY(0.04)' : 'scaleY(1)', opacity: hidden ? 0 : 1 }}>
+        <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+        <circle cx="12" cy="12" r="3" />
+      </g>
+      {/* párpado cerrado: línea curva + pestañas, baja desde arriba */}
+      <g style={{ transition: tr, transformOrigin: '12px 12px', transform: hidden ? 'translateY(0)' : 'translateY(-7px)', opacity: hidden ? 1 : 0 }}>
+        <path d="M3 12c2.6 3.2 15.4 3.2 18 0" />
+        <path d="M5.5 14.6l-1 1.9M12 15.7v2.1M18.5 14.6l1 1.9" strokeWidth={w * 0.82} />
+      </g>
+    </svg>
+  )
+}
+
+export const Pin = ({ size = 16, color = '#7C3AED', w = 2.1, filled = false }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : 'none'} stroke={color} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+    <line x1="12" y1="17" x2="12" y2="22" />
+    <path d="M5 17h14l-1.7-2.6A2 2 0 0 1 17 13.3V4H7v9.3a2 2 0 0 1-.3 1.1Z" />
+  </svg>
+)
+
 export const SplitIcon = ({ size = 18, color = '#7C3AED', w = 2.2 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base} style={{ flexShrink: 0 }}><path d="M3 12h18M12 3v18" /></svg>
 )

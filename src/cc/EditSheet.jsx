@@ -45,12 +45,15 @@ function Fields({ s, g, dr, actions, splitLabels }) {
   const cat = catById(s, dr.categoryId)
   const payer = memberById(s, g.id, dr.payerId)
   const meth = s.methods.find((x) => x.id === dr.methodId)
+  // Subtítulo: en un espacio 1:1 se muestra la persona (no el nombre interno del grupo).
+  const oneToOne = !g.personal && !g.isGroup && (g.direct || g.members.length === 2)
+  const subtitle = oneToOne ? 'Con ' + ((g.members.find((m) => m.id !== (s.me || 'dani')) || {}).short || '') : g.name
   return (
     <div style={{ animation: 'ccFade .15s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <div style={{ fontWeight: 800, fontSize: 19, letterSpacing: '-0.01em', color: '#0B1220' }}>Editar gasto</div>
-          <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 700 }}>{g.name}</div>
+          <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 700 }}>{subtitle}</div>
         </div>
         <div onClick={actions.closeEdit} style={{ width: 30, height: 30, borderRadius: '50%', background: '#F1F4F9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Close size={15} color="#64748B" /></div>
       </div>

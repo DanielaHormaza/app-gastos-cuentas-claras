@@ -8,9 +8,14 @@ import { fmtDateFull, monthKeyOf, todayISO, parseSpanishDate, NOMBRES_MES } from
 export const CURRENCIES = ['ARS', 'USD', 'CLP']
 
 // Colores de "estado de balance" (el monto va en neutro; el color es solo del indicador).
-// pos = te deben (verde suave) · neg = debés (gris azulado, NO rojo: transmite calma) · even = a mano/neutro.
+// pos = te deben (verde suave) · neg = debés (slate calmo gris azulado, NO rojo: transmite calma) · even = a mano/neutro.
 export const TONE = { pos: '#0E9F86', neg: '#7B8CB8', even: '#94A3B8' }
+// Fondos tenues para las pills de saldo (te debe / le debés / a mano).
+export const TONE_BG = { pos: '#E6F6F1', neg: '#EEF1F7', even: '#F1F4F9' }
 const CUR_PREFIX = { ARS: '$', USD: 'US$', CLP: 'CLP$' }
+
+// Paleta estable para derivar un color de persona cuando el miembro no trae color propio.
+const PERSON_PALETTE = ['#7C3AED', '#3B82F6', '#2ECCB1', '#F59E0B', '#EC4899', '#10B981', '#F43F5E', '#0EA5E9']
 
 // "Ocultar saldos": flag global de display. Cuando está activo, fmt enmascara los
 // montos ("$ ••••"). NO afecta cálculos ni el CSV (buildCsv lo desactiva al exportar).
@@ -152,7 +157,7 @@ export function compute(state, gid) {
 }
 
 // Monedas con saldo relevante, en orden fijo.
-function curList(obj) {
+export function curList(obj) {
   return CURRENCIES.filter((c) => obj[c] !== undefined && Math.abs(obj[c]) >= 1).map((c) => [c, obj[c]])
 }
 
@@ -184,6 +189,271 @@ export function totalsByCurrency(state, ids) {
   const t = {}
   ids.forEach((id) => { const c = compute(state, id); for (const cur in c.nets) t[cur] = (t[cur] || 0) + c.nets[cur] })
   return curList(t)
+}
+
+// ===== Modelo centrado en personas (estilo Splitwise) =====
+
+// Personas únicas con las que compartís gastos (en cualquier grupo no-personal), sin vos.
+export function friendIds(state) {
+  const me = state.me || 'dani'
+  const seen = []
+  for (const gid in state.groups) {
+    const g = state.groups[gid]
+    if (g.personal) continue
+    for (const m of g.members) if (m.id !== me && !seen.includes(m.id)) seen.push(m.id)
+  }
+  return seen
+}
+
+// Busca el miembro de una persona en cualquier grupo (el primero que aparezca).
+export function personById(state, pid) {
+  for (const gid in state.groups) {
+    const m = state.groups[gid].members.find((x) => x.id === pid)
+    if (m) return m
+  }
+  return { id: pid, short: '?', name: '?', color: '#94A3B8', initial: '?' }
+}
+
+// Color estable de una persona: el de su miembro si existe; si no, derivado del id.
+export function personColor(state, pid) {
+  const m = personById(state, pid)
+  if (m && m.color) return m.color
+  const s = String(pid || '')
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return PERSON_PALETTE[h % PERSON_PALETTE.length]
+}
+
+// ¿La persona todavía no tiene cuenta? (invitación pendiente). Opt-in por miembro.
+export function isPending(state, pid) {
+  return !!personById(state, pid).pending
+}
+
+// Saldo agregado con UNA persona, por moneda, sumando todos los grupos compartidos
+// (1:1 directos + grupales, incluidos archivados). Modelo pairwise me↔pid por gasto.
+// Usa las primitivas reales: shareFor (splitLog/excluded/modos), saltea futuros, contempla transfers y payments.
+export function computeFriend(state, pid) {
+  const me = state.me || 'dani'
+  const nets = {}
+  const add = (cur, v) => { nets[cur] = (nets[cur] || 0) + v }
+  const groups = []
+  const expenses = []
+  for (const gid in state.groups) {
+    const g = state.groups[gid]
+    if (g.personal) continue
+    if (!g.members.some((m) => m.id === pid)) continue
+    const oneToOne = !g.isGroup && (g.direct || g.members.length === 2) // espacio 1:1 con esta persona (no un grupo con nombre)
+    const gnets = {}
+    const gadd = (cur, v) => { gnets[cur] = (gnets[cur] || 0) + v; add(cur, v) }
+    ;(state.ledgers[gid] || []).forEach((e) => {
+      if (e.future) return
+      const cur = e.currency || 'ARS'
+      if (e.kind === 'transfer') {
+        // pago entre vos y esta persona: salda deuda (no es consumo). Otros pares se ignoran.
+        let delta = 0
+        if (e.from === pid && e.to === me) delta = -e.amount      // te pagó → baja lo que te debe
+        else if (e.from === me && e.to === pid) delta = e.amount  // le pagaste → baja lo que le debés
+        else return
+        gadd(cur, delta)
+        expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, transfer: true, catIcon: '🔁', catName: e.from === me ? 'Le pagaste' : 'Te pagó', amount: e.amount, cur, date: e.date, payerId: e.from, delta })
+        return
+      }
+      const meShare = shareFor(state, gid, e, me)
+      if (meShare === null) return // saldado
+      const pidShare = shareFor(state, gid, e, pid)
+      let delta = 0
+      if (e.payerId === me) delta = e.amount * pidShare        // pagaste vos → la persona te debe su parte
+      else if (e.payerId === pid) delta = -e.amount * meShare  // pagó la persona → vos le debés tu parte
+      else return // pagó un tercero: no genera arista directa me↔pid
+      if (delta !== 0) gadd(cur, delta)
+      const cat = catById(state, e.categoryId)
+      const payer = memberById(state, gid, e.payerId)
+      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, catIcon: cat.icon, catName: e.desc || cat.name, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
+    })
+    ;(state.payments[gid] || []).forEach((p) => {
+      const cur = p.currency || 'ARS'
+      if (p.from === pid && p.to === me) gadd(cur, -p.amount)
+      if (p.from === me && p.to === pid) gadd(cur, p.amount)
+    })
+    groups.push({ gid, name: g.name, gradient: g.gradient, initial: g.initial, nets: gnets, direct: oneToOne, archived: !!state.archived[gid], members: g.members.length })
+  }
+  return { nets, groups, expenses }
+}
+
+// Totales por moneda sumando el saldo de varias personas (para la cifra hero del home).
+export function friendsTotalByCurrency(state, pids) {
+  const t = {}
+  pids.forEach((pid) => { const c = computeFriend(state, pid); for (const cur in c.nets) t[cur] = (t[cur] || 0) + c.nets[cur] })
+  return curList(t)
+}
+
+// "Mis gastos" REAL: lo personal + tu parte (consumo) de TODOS los grupos, por moneda.
+// Porque tu parte de un gasto compartido también es plata que gastaste vos.
+export function personalSpent(state) {
+  const t = {}
+  const add = (cur, v) => { t[cur] = (t[cur] || 0) + v }
+  ;(state.ledgers.personal || []).forEach((e) => { if (e.future || e.kind === 'transfer') return; add(e.currency || 'ARS', e.amount) })
+  for (const gid in state.groups) {
+    const g = state.groups[gid]
+    if (g.personal) continue
+    ;(state.ledgers[gid] || []).forEach((e) => {
+      if (e.future || e.kind === 'transfer') return
+      const share = myShare(state, gid, e)
+      if (share === null || share <= 0) return
+      add(e.currency || 'ARS', e.amount * share)
+    })
+  }
+  return curList(t)
+}
+
+// Gastos de grupos con TU parte (para mostrarlos también en "Mis gastos", etiquetados por grupo).
+export function myShareExpenses(state) {
+  const out = []
+  for (const gid in state.groups) {
+    const g = state.groups[gid]
+    if (g.personal) continue
+    // En un 1:1 el "origen" se etiqueta con el nombre de la persona, no con el del espacio.
+    const gname = isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
+    ;(state.ledgers[gid] || []).forEach((e) => {
+      if (e.future || e.kind === 'transfer') return
+      const share = myShare(state, gid, e)
+      if (share === null) return
+      const mine = e.amount * share
+      if (mine < 1) return
+      const cat = catById(state, e.categoryId)
+      const payer = memberById(state, gid, e.payerId)
+      out.push({ id: e.id, gid, gname, ggrad: g.gradient, ginitial: g.initial, direct: false, catIcon: cat.icon, catName: e.desc || cat.name, amount: e.amount, cur: e.currency || 'ARS', date: e.date, payerId: e.payerId, payerShort: payer.short, delta: -mine })
+    })
+  }
+  return out
+}
+
+// ¿El grupo es un espacio "uno a uno"? Un 1:1 es el espacio directo con una persona:
+// marcado `direct`, o un grupo de 2 que NO fue creado como grupo con nombre (g.isGroup).
+// Los grupos con nombre (g.isGroup), aunque sean de 2 personas (ej: "Viaje a Chile"), son grupos.
+export function isOneToOne(state, gid) {
+  const g = state.groups[gid]
+  return !!g && !g.personal && !g.isGroup && (g.direct || g.members.length === 2)
+}
+
+// El otro miembro de un espacio 1:1 (la persona dueña de ese chat).
+export function peerOf(state, gid) {
+  const me = state.me || 'dani'
+  const g = state.groups[gid]
+  return g ? g.members.find((m) => m.id !== me) : null
+}
+
+// gid del espacio 1:1 con una persona: primero uno marcado direct, si no cualquier grupo de 2 con [me, pid].
+export function directGroupWith(state, pid) {
+  const me = state.me || 'dani'
+  const ids = Object.keys(state.groups)
+  const direct = ids.find((id) => { const g = state.groups[id]; return !g.personal && g.direct && !g.isGroup && g.members.some((m) => m.id === pid) })
+  if (direct) return direct
+  return ids.find((id) => { const g = state.groups[id]; return !g.personal && !g.isGroup && g.members.length === 2 && g.members.some((m) => m.id === me) && g.members.some((m) => m.id === pid) })
+}
+
+// Saldo NETO de cada miembro dentro de un grupo, por moneda. net > 0 = le deben (acreedor).
+// net = (lo que pagó) − (lo que consumió). Contempla transfers, payments, excluidos y futuros.
+export function memberNets(state, gid) {
+  const g = state.groups[gid]
+  const nets = {}
+  const add = (mid, cur, v) => { (nets[mid] = nets[mid] || {})[cur] = (nets[mid][cur] || 0) + v }
+  ;(state.ledgers[gid] || []).forEach((e) => {
+    if (e.future) return
+    const cur = e.currency || 'ARS'
+    if (e.kind === 'transfer') { add(e.from, cur, e.amount); add(e.to, cur, -e.amount); return }
+    if (e.mode === 'settled') return // pagaron ambos, sin deuda
+    g.members.forEach((m) => {
+      const share = shareFor(state, gid, e, m.id)
+      if (share === null) return
+      add(m.id, cur, (e.payerId === m.id ? e.amount : 0) - e.amount * share)
+    })
+  })
+  ;(state.payments[gid] || []).forEach((p) => {
+    const cur = p.currency || 'ARS'
+    add(p.from, cur, p.amount); add(p.to, cur, -p.amount)
+  })
+  return nets
+}
+
+// "Quién le debe a quién" en un grupo: liquidación con mínimas transferencias, por moneda.
+// Empareja cada deudor con el acreedor más grande (greedy). Devuelve [{ from, to, amount, cur }].
+export function groupSettlement(state, gid) {
+  const nets = memberNets(state, gid)
+  const result = []
+  CURRENCIES.forEach((cur) => {
+    const creditors = []
+    const debtors = []
+    for (const mid in nets) {
+      const v = nets[mid][cur] || 0
+      if (v >= 1) creditors.push({ id: mid, v })
+      else if (v <= -1) debtors.push({ id: mid, v: -v })
+    }
+    creditors.sort((a, b) => b.v - a.v)
+    debtors.sort((a, b) => b.v - a.v)
+    let i = 0, j = 0
+    while (i < debtors.length && j < creditors.length) {
+      const pay = Math.min(debtors[i].v, creditors[j].v)
+      if (pay >= 1) result.push({ from: debtors[i].id, to: creditors[j].id, amount: pay, cur })
+      debtors[i].v -= pay
+      creditors[j].v -= pay
+      if (debtors[i].v < 1) i++
+      if (creditors[j].v < 1) j++
+    }
+  })
+  return result
+}
+
+// Líneas del banner para un grupo (3+): "quién le debe a quién", priorizando las que te involucran.
+export function groupBalanceLines(state, gid) {
+  const me = state.me || 'dani'
+  const settle = groupSettlement(state, gid)
+  if (!settle.length) return [{ pre: 'Están a mano', amount: '', post: '', color: TONE.pos }]
+  const involvesMe = (t) => (t.from === me || t.to === me ? 1 : 0)
+  settle.sort((a, b) => involvesMe(b) - involvesMe(a))
+  return settle.map(({ from, to, amount, cur }) => {
+    const fromShort = memberById(state, gid, from).short
+    const toShort = memberById(state, gid, to).short
+    // color: si te deben a vos → verde; si debés vos → slate; entre terceros → neutro
+    const color = to === me ? TONE.pos : from === me ? TONE.neg : '#64748B'
+    return { pre: fromShort + ' debe a ' + toShort + ': ', amount: fmt(amount, cur), post: '', color }
+  })
+}
+
+// Líneas de saldo AGREGADO con una persona (todos los espacios compartidos), por moneda.
+// Mismo formato que balanceLines, para usar en el banner del chat 1:1 y su detalle.
+export function friendBalanceLines(state, pid) {
+  const c = computeFriend(state, pid)
+  const person = personById(state, pid)
+  const lines = curList(c.nets).map(([cur, net]) => (
+    net > 0
+      ? { pre: person.short + ' te debe ', amount: fmt(net, cur), post: '', color: TONE.pos }
+      : { pre: 'Le debés ', amount: fmt(-net, cur), post: ' a ' + person.short, color: TONE.neg }
+  ))
+  return lines.length ? lines : [{ pre: 'Están a mano', amount: '', post: '', color: TONE.pos }]
+}
+
+// Movimientos compartidos con una persona, agrupados por día (más nuevos primero),
+// cada uno etiquetado con su grupo de origen. Para el detalle del chat 1:1 (vista agregada).
+export function friendMovementsByDay(state, pid) {
+  const me = state.me || 'dani'
+  const expenses = computeFriend(state, pid).expenses.slice().sort(byRecency)
+  const order = []
+  const byDay = {}
+  expenses.forEach((e) => {
+    const key = fmtDateFull(e.date)
+    if (!byDay[key]) { byDay[key] = []; order.push(key) }
+    let impText, impColor
+    if (Math.abs(e.delta) < 1) { impText = '—'; impColor = '#94A3B8' }
+    else if (e.delta > 0) { impText = '+' + fmt(e.delta, e.cur); impColor = TONE.pos }
+    else { impText = '−' + fmt(-e.delta, e.cur); impColor = TONE.neg }
+    byDay[key].push({
+      id: e.id, gid: e.gid, gname: e.gname, direct: e.direct, showChip: !e.direct, catIcon: e.catIcon, title: e.catName,
+      payerText: e.transfer ? 'Transferencia' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''),
+      amountText: fmt(e.amount, e.cur), impText, impColor,
+    })
+  })
+  return { order, byDay }
 }
 
 // Línea contable de un gasto, con el monto que corresponde según el modo.

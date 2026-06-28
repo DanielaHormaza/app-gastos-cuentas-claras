@@ -27,8 +27,13 @@ export function makeInitialState() {
     // ---- identidad ----
     me: 'dani', // member_key del usuario logueado (se setea desde la sesión; 'dani' por defecto)
     // ---- navegación ----
-    screen: 'list', // list | chat | profile | archived | newgroup | methodDetail | monthDetail
+    screen: 'list', // list | chat | profile | archived | newgroup | methodDetail | monthDetail | friend
     groupId: null,
+    friendId: null, // persona abierta en la pantalla de perfil (screen: 'friend')
+    homeTab: 'personas', // pestaña del inicio: personas | grupos
+    addFriend: null, // hoja "Agregar persona": null | { name, email }
+    inviteCopied: null, // id de la persona cuyo enlace de invitación se acaba de copiar (feedback transitorio)
+    confirmUnpin: null, // gid pendiente de confirmación para desfijar del inicio
     view: 'chat', // chat | ledger | months | hist
     menuOpen: false,
     configOpen: false,
@@ -54,7 +59,7 @@ export function makeInitialState() {
     payerFilter: 'all', // filtro por quién pagó ('all' = todos | id de miembro)
     moveQuery: '', // búsqueda por nombre de movimiento
     hideAmounts: false, // "ocultar saldos": enmascara los montos (preferencia por dispositivo)
-    newGroup: { name: '', desc: '', members: [], memberName: '', invited: false },
+    newGroup: { name: '', desc: '', date: '', members: [], memberName: '', invited: false },
     // config de grupo
     addingMember: false,
     newMemberName: '',
@@ -75,10 +80,14 @@ export function makeInitialState() {
       { id: 'transferencia', name: 'Transferencia', icon: '🏦' },
     ],
     archived: {},
-    payments: { pareja: [], personal: [] },
+    pinned: [], // hasta 2 grupos fijados en el inicio (gids)
+    payments: { pareja: [], asado: [], personal: [] },
     threads: {
       pareja: [
         { id: 't1', role: 'app', kind: 'text', text: 'Cargá un gasto escribiéndolo, ej: “8000 nafta pagó Juan”. El saldo inicial de Splitwise ya está cargado.' },
+      ],
+      asado: [
+        { id: 'at1', role: 'app', kind: 'text', text: '¡Grupo creado! Cargá un gasto escribiéndolo acá, ej: “18000 bebidas pagó Pato”.' },
       ],
       personal: [
         { id: 'it1', role: 'app', kind: 'text', text: 'Anotá tus gastos personales. Ej: “3000 café”.' },
@@ -109,6 +118,21 @@ export function makeInitialState() {
           { id: 'juan', name: 'Juan', short: 'Juan', color: '#3B82F6', initial: 'J' },
         ],
       },
+      // Grupo de ejemplo (3+ personas) para la pestaña Grupos. Pato todavía no tiene cuenta:
+      // queda como "Invitación pendiente" (member.pending) y se puede invitar por email.
+      asado: {
+        id: 'asado', name: 'Asado con amigos', initial: 'A',
+        gradient: 'linear-gradient(135deg,#F59E0B,#EF4444)',
+        description: 'Juntada del finde.',
+        createdAt: '21 jun 2026',
+        isGroup: true, // creado como grupo con nombre (no es un 1:1)
+        eventDate: '2026-06-21', // fecha del evento (opcional)
+        members: [
+          { id: 'dani', name: 'Dani (vos)', short: 'Dani', color: '#7C3AED', initial: 'D' },
+          { id: 'juan', name: 'Juan', short: 'Juan', color: '#3B82F6', initial: 'J' },
+          { id: 'pato', name: 'Pato', short: 'Pato', color: '#F59E0B', initial: 'P', pending: true, email: 'pato@mail.com' },
+        ],
+      },
       personal: {
         id: 'personal', name: 'Mis gastos', initial: '🧾',
         gradient: 'linear-gradient(135deg,#2ECCB1,#7C3AED)',
@@ -120,15 +144,22 @@ export function makeInitialState() {
     },
     splits: {
       pareja: { dani: 60, juan: 40 }, // Dani 60% / Juan 40% (como en la planilla) — reparto ACTUAL
+      asado: { dani: 33, juan: 33, pato: 34 },
       personal: { dani: 100 },
     },
     // Regímenes de reparto PASADOS por grupo: { until, shares }. Aplican a gastos con fecha < until.
     // Se llenan al cambiar el % (rige "desde hoy"); vacío = el % actual aplicó siempre.
-    splitLog: { pareja: [], personal: [] },
+    splitLog: { pareja: [], asado: [], personal: [] },
     // Metadatos del reparto actual por grupo: desde cuándo rige + última edición.
-    splitMeta: { pareja: { from: '2000-01-01', at: null, by: null }, personal: { from: '2000-01-01', at: null, by: null } },
+    splitMeta: { pareja: { from: '2000-01-01', at: null, by: null }, asado: { from: '2000-01-01', at: null, by: null }, personal: { from: '2000-01-01', at: null, by: null } },
     ledgers: {
       pareja: PAREJA_LEDGER, // datos reales importados del CSV (ver src/cc/seedPareja)
+      asado: [
+        { id: 'as1', date: '2026-06-21', currency: 'ARS', categoryId: 'super', desc: 'carne y achuras', amount: 42000, payerId: 'dani', mode: 'group' },
+        { id: 'as2', date: '2026-06-21', currency: 'ARS', categoryId: 'salida', desc: 'bebidas', amount: 18000, payerId: 'pato', mode: 'group' },
+        { id: 'as3', date: '2026-06-21', currency: 'ARS', categoryId: 'super', desc: 'carbón y hielo', amount: 9000, payerId: 'juan', mode: 'group' },
+        { id: 'as4', date: '2026-06-21', currency: 'ARS', categoryId: 'ocio', desc: 'alquiler parrilla', amount: 30000, payerId: 'juan', mode: 'group' },
+      ],
       personal: [],
     },
   }
