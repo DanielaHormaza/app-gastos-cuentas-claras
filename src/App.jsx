@@ -250,6 +250,18 @@ export default function App() {
     if (p === '0') localStorage.removeItem('cc-dev')
   }, [])
 
+  // Altura realmente visible (descuenta el teclado en iOS-PWA) → la app se ajusta a eso
+  // así el header no se tapa y el input queda justo arriba del teclado.
+  useEffect(() => {
+    const vv = window.visualViewport
+    const setH = () => document.documentElement.style.setProperty('--app-h', (vv ? vv.height : window.innerHeight) + 'px')
+    setH()
+    vv && vv.addEventListener('resize', setH)
+    vv && vv.addEventListener('scroll', setH)
+    window.addEventListener('resize', setH)
+    return () => { vv && vv.removeEventListener('resize', setH); vv && vv.removeEventListener('scroll', setH); window.removeEventListener('resize', setH) }
+  }, [])
+
   // Persiste solo los datos (no el estado de navegación transitorio).
   useEffect(() => {
     const data = {}
@@ -749,8 +761,8 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', justifyContent: 'center', background: '#e6e9f2' }}>
-      <div style={{ position: 'relative', width: '100%', maxWidth: 460, minHeight: '100dvh', background: '#FBFCFE', overflow: 'hidden' }}>
+    <div style={{ height: 'var(--app-h, 100dvh)', display: 'flex', justifyContent: 'center', background: '#e6e9f2', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', width: '100%', maxWidth: 460, height: 'var(--app-h, 100dvh)', background: '#FBFCFE', overflow: 'hidden' }}>
         {s.screen === 'list' ? <Inicio s={s} actions={actions} /> : screenEl}
       </div>
     </div>

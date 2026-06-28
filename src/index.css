@@ -25,6 +25,10 @@ body {
   color: #0b1220;
   -webkit-font-smoothing: antialiased;
   font-family: var(--font-sans);
+  /* App-shell: el scroll vive en contenedores internos, no en la página.
+     Evita que iOS empuje el header fuera de vista al abrir el teclado. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .num {
