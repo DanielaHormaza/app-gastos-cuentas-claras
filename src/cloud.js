@@ -116,7 +116,8 @@ export async function loadCloudState(userId) {
   for (const gid in groups) {
     threads[gid] = [{ id: 'w' + gid, role: 'app', kind: 'text', text: groups[gid].personal ? 'Anotá tus gastos personales. Ej: “3000 café”.' : 'Cargá un gasto escribiéndolo, ej: “8000 nafta pagó Juan”.' }]
   }
-  const msgs = (msgR.data || []).slice().sort((a, b) => msgKey(a.id) - msgKey(b.id))
+  const rank = (r) => (r.kind === 'user' ? 0 : 1) // a igual momento, el mensaje tipeado va antes que la tarjeta
+  const msgs = (msgR.data || []).slice().sort((a, b) => msgKey(a.id) - msgKey(b.id) || rank(a) - rank(b))
   for (const r of msgs) {
     if (!threads[r.group_id]) continue
     const m = { id: r.id, role: r.role, kind: r.kind }

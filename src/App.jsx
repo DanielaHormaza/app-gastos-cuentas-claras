@@ -49,7 +49,9 @@ const mergeThreads = (prevThreads, cloudThreads) => {
     const byId = {}
     for (const m of (cloudThreads || {})[g] || []) byId[m.id] = m
     for (const m of (prevThreads || {})[g] || []) if (!MSG_SYNC_KINDS.has(m.kind) && !isIntro(m) && !byId[m.id]) byId[m.id] = m
-    out[g] = Object.values(byId).sort((a, b) => msgKey(a) - msgKey(b))
+    // a igual momento, el mensaje tipeado (user) va antes que la tarjeta de la app
+    const rank = (m) => (m.kind === 'user' ? 0 : 1)
+    out[g] = Object.values(byId).sort((a, b) => msgKey(a) - msgKey(b) || rank(a) - rank(b))
   }
   return out
 }
