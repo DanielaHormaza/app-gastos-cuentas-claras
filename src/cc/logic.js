@@ -6,6 +6,10 @@ import { fmtDateFull, monthKeyOf, todayISO, parseSpanishDate, NOMBRES_MES } from
 
 // Orden de monedas para mostrar (sin conversión, cada una por separado).
 export const CURRENCIES = ['ARS', 'USD', 'CLP']
+
+// Colores de "estado de balance" (el monto va en neutro; el color es solo del indicador).
+// pos = te deben (verde suave) · neg = debés (gris azulado, NO rojo: transmite calma) · even = a mano/neutro.
+export const TONE = { pos: '#0E9F86', neg: '#7B8CB8', even: '#94A3B8' }
 const CUR_PREFIX = { ARS: '$', USD: 'US$', CLP: 'CLP$' }
 
 // "Ocultar saldos": flag global de display. Cuando está activo, fmt enmascara los
@@ -165,12 +169,12 @@ export function balanceLines(state, gid) {
   const lines = curList(c.nets).map(([cur, net]) => {
     if (c.twoPerson) {
       return net > 0
-        ? { pre: c.other.short + ' te debe ', amount: fmt(net, cur), post: '', color: '#0E9F86' }
-        : { pre: 'Le debés ', amount: fmt(-net, cur), post: ' a ' + c.other.short, color: '#E11D5B' }
+        ? { pre: c.other.short + ' te debe ', amount: fmt(net, cur), post: '', color: TONE.pos }
+        : { pre: 'Le debés ', amount: fmt(-net, cur), post: ' a ' + c.other.short, color: TONE.neg }
     }
     return net > 0
-      ? { pre: 'A favor: ', amount: fmt(net, cur), post: '', color: '#0E9F86' }
-      : { pre: 'En contra: ', amount: fmt(-net, cur), post: '', color: '#E11D5B' }
+      ? { pre: 'A favor: ', amount: fmt(net, cur), post: '', color: TONE.pos }
+      : { pre: 'En contra: ', amount: fmt(-net, cur), post: '', color: TONE.neg }
   })
   return lines.length ? lines : [{ pre: 'Están a mano', amount: '', post: '', color: '#0E9F86' }]
 }
@@ -309,7 +313,7 @@ export function impactOf(state, gid, e, daniPct) {
   }
   const owe = e.amount * share
   if (owe <= 0) return { text: 'no participaste', color: '#94A3B8' }
-  return { text: 'tu parte ' + fmt(owe, cur), color: '#E11D5B' }
+  return { text: 'tu parte ' + fmt(owe, cur), color: TONE.neg }
 }
 
 // Categorías presentes en el ledger del grupo (para el filtro de históricos).

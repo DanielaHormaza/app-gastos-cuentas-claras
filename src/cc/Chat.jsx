@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, byRecency } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, byRecency, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, Eye, EyeOff } from './icons'
 import { Futuros, Historicos } from './GroupViews'
@@ -39,9 +39,7 @@ export default function Chat({ s, actions, typingName }) {
             <span style={{ fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{g.name}</span>
             <ChevronDown />
           </div>
-          {typingName && s.view === 'chat'
-            ? <span style={{ fontSize: 10.5, fontWeight: 800, color: '#7C3AED', letterSpacing: '0.02em' }}>{typingName} está escribiendo…</span>
-            : <span style={{ fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{VIEW_TITLES[s.view] || ''}</span>}
+          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{VIEW_TITLES[s.view] || ''}</span>
         </div>
         <div onClick={actions.openConfig} style={{ width: 38, height: 38, borderRadius: '50%', background: '#F1F4F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}><Gear /></div>
       </div>
@@ -50,7 +48,7 @@ export default function Chat({ s, actions, typingName }) {
       {s.menuOpen && <ViewMenu s={s} actions={actions} />}
 
       {s.view === 'chat' && (
-        <ChatView s={s} g={g} c={c} bannerLabel={bannerLabel} lines={lines} inputHint={inputHint} readOnly={readOnly} actions={actions} />
+        <ChatView s={s} g={g} c={c} bannerLabel={bannerLabel} lines={lines} inputHint={inputHint} readOnly={readOnly} actions={actions} typingName={typingName} />
       )}
 
       {s.settleOpen && !g.personal && <SettleSheet s={s} actions={actions} />}
@@ -93,7 +91,7 @@ function ViewMenu({ s, actions }) {
   )
 }
 
-function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions }) {
+function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions, typingName }) {
   const gid = g.id
   const scrollRef = useRef(null)
   const taRef = useRef(null)
@@ -153,6 +151,11 @@ function ChatView({ s, g, c, bannerLabel, lines, inputHint, readOnly, actions })
           })}
         </div>
       </div>
+
+      {/* "escribiendo…" justo arriba del input (parte de la conversación, discreto) */}
+      {!readOnly && typingName && (
+        <div style={{ padding: '0 20px 5px', fontSize: 11.5, fontWeight: 700, color: '#94A3B8', fontStyle: 'italic' }}>{typingName} está escribiendo…</div>
+      )}
 
       {/* input / read-only */}
       {readOnly ? (
@@ -339,26 +342,31 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
   return null
 }
 
-/** Saldo en una o varias monedas. Si todas comparten la misma frase
- * (ej. "Juan te debe"), la muestra una vez y junta los montos. */
+/** Saldo en una o varias monedas. Monto SIEMPRE en neutro; el color va en un
+ * pequeño indicador (punto) + el texto del estado, no en el monto. */
 export function BalanceLines({ lines, size = 16 }) {
+  const Dot = ({ c }) => <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: c, marginRight: 6, verticalAlign: 'middle', flexShrink: 0 }} />
+  const txt = (c) => ({ fontWeight: 700, fontSize: size * 0.84, color: c })
+  const amt = { fontWeight: 800, fontSize: size, color: '#0B1220' }
   const uniform = lines.length > 1 && lines.every((l) => l.pre === lines[0].pre && l.post === lines[0].post)
   if (uniform) {
     return (
-      <div style={{ fontWeight: 800, fontSize: size, color: '#0B1220', marginTop: 1, lineHeight: 1.3 }}>
-        {lines[0].pre}
-        {lines.map((l, i) => (
-          <span key={i} style={{ color: l.color }}>{i > 0 ? ' · ' : ''}{l.amount}</span>
-        ))}
-        {lines[0].post}
+      <div style={{ marginTop: 2, lineHeight: 1.3 }}>
+        {(lines[0].pre || lines[0].post) && <Dot c={lines[0].color} />}
+        <span style={txt(lines[0].color)}>{lines[0].pre}</span>
+        {lines.map((l, i) => <span key={i} className="num" style={amt}>{i > 0 ? ' · ' : ''}{l.amount}</span>)}
+        <span style={txt(lines[0].color)}>{lines[0].post}</span>
       </div>
     )
   }
   return (
-    <div style={{ marginTop: 1 }}>
+    <div style={{ marginTop: 2 }}>
       {lines.map((l, i) => (
-        <div key={i} style={{ fontWeight: 800, fontSize: size, color: '#0B1220', lineHeight: 1.3 }}>
-          {l.pre}<span style={{ color: l.color }}>{l.amount}</span>{l.post}
+        <div key={i} style={{ lineHeight: 1.35 }}>
+          {(l.pre || l.post) && <Dot c={l.color} />}
+          <span style={txt(l.color)}>{l.pre}</span>
+          <span className="num" style={amt}>{l.amount}</span>
+          <span style={txt(l.color)}>{l.post}</span>
         </div>
       ))}
     </div>
@@ -392,7 +400,7 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
   const gid = g.id
   const netArs = c.nets.ARS || 0
   const arrow = g.personal ? '' : netArs > 1 ? '↑' : netArs < -1 ? '↓' : '='
-  const arrowColor = netArs > 1 ? '#0E9F86' : netArs < -1 ? '#E11D5B' : '#94A3B8'
+  const arrowColor = netArs > 1 ? TONE.pos : netArs < -1 ? TONE.neg : '#94A3B8'
 
   const cats = groupCategories(s, gid)
   const currencies = groupCurrencies(s, gid)

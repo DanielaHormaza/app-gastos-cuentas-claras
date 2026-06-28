@@ -85,6 +85,28 @@ create policy "messages member access" on messages for all using (is_group_membe
 -- Realtime para el chat (si ya estaba agregada, este ALTER da error inofensivo: ignoralo).
 alter publication supabase_realtime add table messages;
 
+-- Insignia "Usuario Fundador": número correlativo PERMANENTE por usuario.
+alter table profiles add column if not exists founder_number int;
+-- Backfill de los usuarios existentes por antigüedad (el más viejo = #1 → Dani #1, Juan #2).
+with ordered as (
+  select id, row_number() over (order by created_at asc, id asc) as n from profiles
+)
+update profiles p set founder_number = o.n from ordered o where p.id = o.id and p.founder_number is null;
+create unique index if not exists profiles_founder_number_key on profiles(founder_number);
+-- Asigna el siguiente número al primer login de un usuario sin número (atómico, sin huecos).
+create or replace function ensure_founder_number() returns int
+language plpgsql security definer as $$
+declare n int;
+begin
+  select founder_number into n from profiles where id = auth.uid();
+  if n is not null then return n; end if;
+  update profiles set founder_number = (select coalesce(max(founder_number), 0) + 1 from profiles)
+    where id = auth.uid() and founder_number is null;
+  select founder_number into n from profiles where id = auth.uid();
+  return n;
+end $$;
+grant execute on function ensure_founder_number() to authenticated;
+
 -- ---------- SEGURIDAD (RLS) ----------
 alter table profiles enable row level security;
 alter table categories enable row level security;

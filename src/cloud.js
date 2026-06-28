@@ -47,13 +47,14 @@ export async function cloudSaveSplit(gid, fromDate, shares, by, at) {
 // Lee todo lo del usuario desde Supabase y lo arma en la forma del estado `s`.
 // userId: auth.user.id del logueado (para detectar quién soy → state.me).
 export async function loadCloudState(userId) {
-  const [groupsR, membersR, catsR, splitsR, expR, msgR] = await Promise.all([
+  const [groupsR, membersR, catsR, splitsR, expR, msgR, profR] = await Promise.all([
     supabase.from('groups').select('*'),
     supabase.from('group_members').select('*').order('id', { ascending: true }),
     supabase.from('categories').select('*'),
     supabase.from('split_history').select('*').order('from_date', { ascending: true }),
     supabase.from('expenses').select('*'),
     supabase.from('messages').select('*'),
+    supabase.from('profiles').select('founder_number, created_at').eq('id', userId).maybeSingle(),
   ])
   const bad = [groupsR, membersR, catsR, splitsR, expR, msgR].find((r) => r.error)
   if (bad) throw new Error(bad.error.message)
@@ -132,7 +133,7 @@ export async function loadCloudState(userId) {
   return {
     ...base,
     me,
-    profile: { ...base.profile, name: meName },
+    profile: { ...base.profile, name: meName, founderNumber: profR.data?.founder_number || null, memberSince: profR.data?.created_at || null },
     groups,
     splits,
     splitLog,

@@ -65,7 +65,7 @@ export function makeInitialState() {
     newProfMethodName: '',
 
     // ---- datos ----
-    profile: { name: 'Dani', email: 'dani@cuentasclaras.app', gradient: 'linear-gradient(135deg,#7C3AED,#3B82F6)' },
+    profile: { name: 'Dani', email: 'dani@cuentasclaras.app', gradient: 'linear-gradient(135deg,#7C3AED,#3B82F6)', founderNumber: 1, memberSince: '2026-06-01' },
     methods: [
       { id: 'efectivo', name: 'Efectivo', icon: '💵' },
       { id: 'visa_macro', name: 'Visa Macro (débito)', icon: '💳' },
