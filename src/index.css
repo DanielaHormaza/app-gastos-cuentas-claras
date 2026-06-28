@@ -25,8 +25,11 @@ body {
   color: #0b1220;
   -webkit-font-smoothing: antialiased;
   font-family: var(--font-sans);
-  /* App-shell: el scroll vive en contenedores internos, no en la página.
-     Evita que iOS empuje el header fuera de vista al abrir el teclado. */
+  /* App-shell: el body queda FIJO (iOS no puede scrollear la página al abrir el
+     teclado, que era lo que tapaba el header). El scroll vive en contenedores
+     internos. La app se ajusta a la altura visible vía --app-h (VisualViewport). */
+  position: fixed;
+  inset: 0;
   overflow: hidden;
   overscroll-behavior: none;
 }

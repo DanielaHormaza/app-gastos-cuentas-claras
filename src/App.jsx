@@ -153,7 +153,7 @@ export default function App() {
         const cloud = await loadCloudState(session.user.id)
         // conservar el historial de chat ya guardado (por dispositivo); intro solo si no hay
         if (!cancelled) {
-          setS((prev) => ({ ...cloud, threads: mergeThreads(prev.threads, cloud.threads), hideAmounts: prev.hideAmounts })) // chat compartido desde la nube; hideAmounts es preferencia local
+          setS((prev) => ({ ...cloud, threads: mergeThreads(prev.threads, cloud.threads), hideAmounts: prev.hideAmounts, authEmail: prev.authEmail })) // chat compartido desde la nube; hideAmounts/authEmail son del cliente, no de la nube
           setDataReady(true)
         }
       } catch (e) {

@@ -54,7 +54,7 @@ export default function Profile({ s, actions }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px' }}>
             <span style={{ fontSize: 16 }}>👤</span>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Usuario</div><div style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>@dani</div></div>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Usuario</div><div style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>@{s.me || (prof.name || '').trim().toLowerCase().split(' ')[0] || 'usuario'}</div></div>
           </div>
         </div>
 
