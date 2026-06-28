@@ -88,13 +88,22 @@ const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'paym
 
 function load() {
   const hideAmounts = localStorage.getItem(HIDE_KEY) === '1'
+  let st
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return migrate({ ...makeInitialState(), ...JSON.parse(raw), hideAmounts })
+    st = raw ? migrate({ ...makeInitialState(), ...JSON.parse(raw), hideAmounts }) : { ...makeInitialState(), hideAmounts }
   } catch {
-    /* dato corrupto: se ignora */
+    st = { ...makeInitialState(), hideAmounts } /* dato corrupto: se ignora */
   }
-  return { ...makeInitialState(), hideAmounts }
+  // DEV: ver la perspectiva de otro miembro con ?me=juan (solo local, junto a ?dev=1)
+  if (import.meta.env.DEV && typeof location !== 'undefined') {
+    const meParam = new URLSearchParams(location.search).get('me')
+    if (meParam) {
+      const m = (st.groups?.pareja?.members || []).find((x) => x.id === meParam)
+      st = { ...st, me: meParam, profile: { ...st.profile, name: m ? m.short : st.profile.name, email: meParam + '@cuentasclaras.app', founderNumber: meParam === 'juan' ? 2 : meParam === 'dani' ? 1 : st.profile.founderNumber, memberSince: st.profile.memberSince || '2026-06-01' } }
+    }
+  }
+  return st
 }
 
 // Asegura que el historial de reparto exista para cada grupo (estado guardado previo a esta feature).
@@ -150,6 +159,9 @@ export default function App() {
       try {
         const { error: claimErr } = await supabase.rpc('claim_my_slots')
         if (claimErr) console.error('[claim_my_slots]', claimErr.message)
+        // asigna el número de "Usuario Fundador" si todavía no lo tiene (idempotente)
+        const { error: fnErr } = await supabase.rpc('ensure_founder_number')
+        if (fnErr) console.error('[ensure_founder_number]', fnErr.message)
         const cloud = await loadCloudState(session.user.id)
         // conservar el historial de chat ya guardado (por dispositivo); intro solo si no hay
         if (!cancelled) {

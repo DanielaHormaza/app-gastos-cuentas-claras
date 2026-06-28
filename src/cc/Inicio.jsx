@@ -1,4 +1,4 @@
-import { compute, fmt, totalsByCurrency, CURRENCIES } from './logic'
+import { compute, fmt, totalsByCurrency, CURRENCIES, TONE } from './logic'
 import { Logo, Chevron, Plus, Archive, Eye, EyeOff } from './icons'
 
 /** Pantalla Inicio: cifra hero + "Mis gastos" + lista de grupos + archivados. */
@@ -12,6 +12,7 @@ export default function Inicio({ s, actions }) {
   const allPos = totals.every(([, v]) => v >= 0)
   const allNeg = totals.every(([, v]) => v < 0)
   const totalLabel = totals.length === 0 ? 'Estás al día' : allPos ? 'En total, te deben' : allNeg ? 'En total, debés' : 'Tu saldo'
+  const heroTone = totals.length === 0 ? TONE.pos : allPos ? TONE.pos : allNeg ? TONE.neg : '#94A3B8'
 
   const personalSum = (s.ledgers.personal || []).reduce((a, e) => a + e.amount, 0)
   const prof = s.profile
@@ -27,10 +28,17 @@ export default function Inicio({ s, actions }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px 6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
           <Logo size={28} />
-          <span className="num" style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.02em' }}>
-            <span style={{ color: '#0B1220' }}>Cuentas </span>
-            <span style={{ color: '#7C3AED' }}>Claras</span>
-          </span>
+          <div>
+            <span className="num" style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.02em' }}>
+              <span style={{ color: '#0B1220' }}>Cuentas </span>
+              <span style={{ color: '#7C3AED' }}>Claras</span>
+            </span>
+            {prof.founderNumber && (
+              <div onClick={actions.openProfile} title="Usuario Fundador" style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1, fontSize: 10.5, fontWeight: 800, color: '#0E9F86', cursor: 'pointer' }}>
+                <span style={{ fontSize: 11 }}>🏅</span>Usuario Fundador #{prof.founderNumber}
+              </div>
+            )}
+          </div>
         </div>
         <div
           onClick={actions.openProfile}
@@ -42,17 +50,18 @@ export default function Inicio({ s, actions }) {
 
       {/* cifra hero (una línea por moneda; sin conversión) */}
       <div style={{ padding: '24px 26px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ fontSize: 13, color: '#94A3B8', fontWeight: 700 }}>{totalLabel}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          {totals.length > 0 && <span style={{ width: 8, height: 8, borderRadius: '50%', background: heroTone, flexShrink: 0 }} />}
+          <div style={{ fontSize: 13, color: totals.length === 0 ? '#94A3B8' : heroTone, fontWeight: 800 }}>{totalLabel}</div>
           <button onClick={actions.toggleHideAmounts} title={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} aria-label={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} style={{ border: 'none', background: 'transparent', padding: 2, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
             {s.hideAmounts ? <EyeOff size={17} color="#94A3B8" /> : <Eye size={17} color="#94A3B8" />}
           </button>
         </div>
         {totals.length === 0 ? (
-          <div className="num" style={{ fontSize: 44, fontWeight: 700, letterSpacing: '-0.03em', color: '#0B1220', marginTop: 4 }}>$0</div>
+          <div className="num" style={{ fontSize: 36, fontWeight: 500, letterSpacing: '-0.02em', color: '#0B1220', marginTop: 4 }}>$0</div>
         ) : (
           totals.map(([cur, v], i) => (
-            <div key={cur} className="num" style={{ fontSize: i === 0 ? 44 : 22, fontWeight: 700, letterSpacing: '-0.03em', color: v >= 0 ? '#0B1220' : '#E11D5B', marginTop: i === 0 ? 4 : 0, lineHeight: 1.1 }}>
+            <div key={cur} className="num" style={{ fontSize: i === 0 ? 36 : 19, fontWeight: 500, letterSpacing: '-0.02em', color: '#0B1220', marginTop: i === 0 ? 4 : 0, lineHeight: 1.15 }}>
               {fmt(Math.abs(v), cur)}
             </div>
           ))
@@ -86,6 +95,7 @@ export default function Inicio({ s, actions }) {
             const others = g.members.filter((m) => m.id !== (s.me || 'dani'))
             const membersText = others.length === 1 ? others[0].short + ' y ' + s.profile.name : g.members.length + ' personas'
             const label = curs.length === 0 ? 'a mano' : (c.nets[curs[0]] > 0 ? 'te debe' : 'le debés')
+            const cardTone = curs.length === 0 ? TONE.even : c.nets[curs[0]] > 0 ? TONE.pos : TONE.neg
             return (
               <div
                 key={id}
@@ -99,13 +109,15 @@ export default function Inicio({ s, actions }) {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   {curs.length === 0 ? (
-                    <div style={{ fontWeight: 800, fontSize: 14.5, color: '#94A3B8' }}>$0</div>
+                    <div className="num" style={{ fontWeight: 800, fontSize: 14.5, color: '#94A3B8' }}>$0</div>
                   ) : (
                     curs.map((cu) => (
-                      <div key={cu} style={{ fontWeight: 800, fontSize: 14.5, color: c.nets[cu] > 0 ? '#0E9F86' : '#E11D5B', lineHeight: 1.25 }}>{fmt(Math.abs(c.nets[cu]), cu)}</div>
+                      <div key={cu} className="num" style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220', lineHeight: 1.25 }}>{fmt(Math.abs(c.nets[cu]), cu)}</div>
                     ))
                   )}
-                  <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>{label}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5, fontSize: 11, fontWeight: 700, color: cardTone, marginTop: 1 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: cardTone, flexShrink: 0 }} />{label}
+                  </div>
                 </div>
               </div>
             )

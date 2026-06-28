@@ -4,9 +4,12 @@ import { BRAND_GRADIENT } from './initialState'
 import { ledgerMonths } from './logic'
 import { ExportBar } from './GroupViews'
 import { supabase } from '../supabase'
+import { APP_VERSION } from '../version'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
 const sectionLabel = { fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', marginBottom: 6 }
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const mesAno = (iso) => { if (!iso) return ''; const s = String(iso); return MESES[Number(s.slice(5, 7)) - 1] + ' de ' + s.slice(0, 4) }
 
 /** Mi perfil: avatar, datos de cuenta, medios de pago, preferencias. */
 export default function Profile({ s, actions }) {
@@ -17,13 +20,18 @@ export default function Profile({ s, actions }) {
   const [pwd, setPwd] = useState('')
   const [pwdMsg, setPwdMsg] = useState(null) // { ok, text }
   const [pwdSaving, setPwdSaving] = useState(false)
+  // recuerda (por dispositivo) si ya definiste una contraseña, para mostrar "cambiar" en vez de "definir"
+  const [hasPwd, setHasPwd] = useState(() => localStorage.getItem('cc-haspwd') === '1')
   const savePwd = async () => {
     if (pwd.length < 6) { setPwdMsg({ ok: false, text: 'Mínimo 6 caracteres.' }); return }
     setPwdSaving(true); setPwdMsg(null)
     const { error } = await supabase.auth.updateUser({ password: pwd })
     setPwdSaving(false)
-    if (error) setPwdMsg({ ok: false, text: error.message })
-    else { setPwdMsg({ ok: true, text: '✓ Contraseña guardada. Ya podés entrar con email y contraseña.' }); setPwd('') }
+    if (error) { setPwdMsg({ ok: false, text: error.message }); return }
+    try { localStorage.setItem('cc-haspwd', '1') } catch { /* sin storage */ }
+    setHasPwd(true)
+    setPwdMsg({ ok: true, text: '✓ Contraseña guardada. Ya podés entrar con email y contraseña.' })
+    setPwd('')
   }
 
   return (
@@ -42,6 +50,17 @@ export default function Profile({ s, actions }) {
           <div onClick={actions.onChangeProfilePhoto} style={{ fontSize: 12.5, fontWeight: 800, color: '#7C3AED', marginTop: 10, cursor: 'pointer' }}>Cambiar foto</div>
         </div>
 
+        {prof.founderNumber && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 13, borderRadius: 16, padding: '13px 15px', marginBottom: 20, background: 'linear-gradient(135deg,#FFF7E6,#F4EEFF)', border: '1px solid #F1E4C4' }}>
+            <div style={{ fontSize: 26, lineHeight: 1 }}>🏅</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', color: '#B45309', textTransform: 'uppercase' }}>Usuario Fundador</div>
+              <div style={{ fontWeight: 800, fontSize: 18, color: '#0B1220', letterSpacing: '-0.01em', lineHeight: 1.15 }}>Usuario #{prof.founderNumber}</div>
+              {prof.memberSince && <div style={{ fontSize: 11.5, fontWeight: 600, color: '#94A3B8', marginTop: 1 }}>Con nosotros desde {mesAno(prof.memberSince)}</div>}
+            </div>
+          </div>
+        )}
+
         <div style={sectionLabel}>NOMBRE</div>
         <input value={prof.name} onChange={(e) => actions.onProfName(e.target.value)} style={{ border: '1.5px solid #E7EAF1', borderRadius: 13, padding: '12px 14px', outline: 'none', fontWeight: 800, fontSize: 16, color: '#0B1220', width: '100%', marginBottom: 18, fontFamily: 'inherit', boxSizing: 'border-box' }} />
 
@@ -58,12 +77,14 @@ export default function Profile({ s, actions }) {
           </div>
         </div>
 
-        <div style={sectionLabel}>CONTRASEÑA</div>
+        <div style={sectionLabel}>{hasPwd ? 'CAMBIAR CONTRASEÑA' : 'CONTRASEÑA'}</div>
         <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, padding: 14, marginBottom: 18, boxShadow: cardShadow }}>
-          <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600, lineHeight: 1.45, marginBottom: 10 }}>Definí una contraseña para entrar con email + contraseña (recomendado para la app instalada en el celular).</div>
+          {hasPwd
+            ? <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#0E9F86', fontWeight: 700, marginBottom: 10 }}>✓ Tenés una contraseña activa. Podés cambiarla acá.</div>
+            : <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600, lineHeight: 1.45, marginBottom: 10 }}>Definí una contraseña para entrar con email + contraseña (recomendado para la app instalada en el celular).</div>}
           <div style={{ display: 'flex', gap: 8 }}>
-            <input value={pwd} onChange={(e) => { setPwd(e.target.value); setPwdMsg(null) }} onKeyDown={(e) => e.key === 'Enter' && savePwd()} type="password" autoComplete="new-password" placeholder="Nueva contraseña (mín. 6)" style={{ flex: 1, border: '1.5px solid #E2E8F0', borderRadius: 11, padding: '10px 12px', outline: 'none', fontWeight: 600, fontSize: 14, color: '#0B1220', background: '#fff', fontFamily: 'inherit', minWidth: 0 }} />
-            <button onClick={savePwd} disabled={pwdSaving || pwd.length < 6} style={{ border: 'none', background: pwdSaving || pwd.length < 6 ? '#CBD5E1' : '#7C3AED', color: '#fff', borderRadius: 11, padding: '10px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, cursor: pwdSaving || pwd.length < 6 ? 'not-allowed' : 'pointer', flexShrink: 0 }}>{pwdSaving ? '…' : 'Guardar'}</button>
+            <input value={pwd} onChange={(e) => { setPwd(e.target.value); setPwdMsg(null) }} onKeyDown={(e) => e.key === 'Enter' && savePwd()} type="password" autoComplete="new-password" placeholder={hasPwd ? 'Nueva contraseña (mín. 6)' : 'Contraseña (mín. 6)'} style={{ flex: 1, border: '1.5px solid #E2E8F0', borderRadius: 11, padding: '10px 12px', outline: 'none', fontWeight: 600, fontSize: 14, color: '#0B1220', background: '#fff', fontFamily: 'inherit', minWidth: 0 }} />
+            <button onClick={savePwd} disabled={pwdSaving || pwd.length < 6} style={{ border: 'none', background: pwdSaving || pwd.length < 6 ? '#CBD5E1' : '#7C3AED', color: '#fff', borderRadius: 11, padding: '10px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, cursor: pwdSaving || pwd.length < 6 ? 'not-allowed' : 'pointer', flexShrink: 0 }}>{pwdSaving ? '…' : hasPwd ? 'Actualizar' : 'Guardar'}</button>
           </div>
           {pwdMsg && <div style={{ fontSize: 12, fontWeight: 700, color: pwdMsg.ok ? '#0E9F86' : '#E11D5B', marginTop: 8, lineHeight: 1.4 }}>{pwdMsg.text}</div>}
         </div>
@@ -112,6 +133,8 @@ export default function Profile({ s, actions }) {
         <div onClick={actions.signOut} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 13, padding: 13, cursor: 'pointer' }}>
           <span style={{ fontWeight: 800, fontSize: 14, color: '#E11D5B' }}>Cerrar sesión</span>
         </div>
+
+        <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#C3CCDA', marginTop: 18 }}>Cuentas Claras · v{APP_VERSION}</div>
       </div>
 
       {s.profMethodEdit != null && <MethodEditSheet s={s} actions={actions} />}
