@@ -31,6 +31,19 @@ body {
   font-family: var(--font-num);
 }
 
+/* iOS hace zoom automático al enfocar un campo cuyo font-size sea < 16px.
+   Solución recomendada: forzar 16px en los campos de texto SOLO en iOS
+   (@supports con -webkit-touch-callout, exclusivo de iOS). No se toca el
+   viewport, así que el zoom manual (pinch) del navegador sigue disponible.
+   En desktop los tamaños quedan intactos. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Animaciones del prototipo Cuentas Claras */
 @keyframes ccIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes ccInL { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }

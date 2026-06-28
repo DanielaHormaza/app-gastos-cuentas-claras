@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, textMatch, groupCategories, buildCsv, daniPctAt } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, byRecency } from './logic'
 import { BRAND_GRADIENT } from './initialState'
-import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron } from './icons'
-import { Futuros, Historicos, downloadCsv } from './GroupViews'
+import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, Eye, EyeOff } from './icons'
+import { Futuros, Historicos } from './GroupViews'
 import { Filters } from './CategoryFilter'
 import Config from './Config'
 import SettleSheet from './SettleSheet'
@@ -19,7 +19,7 @@ const ghostBtn = { border: '1.5px solid #E2E8F0', background: '#fff', color: '#4
 const closeBtn = { width: 38, border: '1.5px solid #E2E8F0', background: '#fff', borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }
 
 /** Pantalla de grupo: header + (chat | movimientos | futuros | históricos). */
-export default function Chat({ s, actions }) {
+export default function Chat({ s, actions, typingName }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const c = compute(s, gid)
@@ -39,7 +39,9 @@ export default function Chat({ s, actions }) {
             <span style={{ fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{g.name}</span>
             <ChevronDown />
           </div>
-          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{VIEW_TITLES[s.view] || ''}</span>
+          {typingName && s.view === 'chat'
+            ? <span style={{ fontSize: 10.5, fontWeight: 800, color: '#7C3AED', letterSpacing: '0.02em' }}>{typingName} está escribiendo…</span>
+            : <span style={{ fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{VIEW_TITLES[s.view] || ''}</span>}
         </div>
         <div onClick={actions.openConfig} style={{ width: 38, height: 38, borderRadius: '50%', background: '#F1F4F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}><Gear /></div>
       </div>
@@ -393,18 +395,16 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
   const arrowColor = netArs > 1 ? '#0E9F86' : netArs < -1 ? '#E11D5B' : '#94A3B8'
 
   const cats = groupCategories(s, gid)
+  const currencies = groupCurrencies(s, gid)
+  const payers = groupPayers(s, gid)
   const meShort = (g.members.find((m) => m.id === (s.me || 'dani')) || {}).short || 'Vos'
-  const exportCsv = () => {
-    const csv = buildCsv(s, gid, null, null, s.catFilter, s.moveQuery)
-    downloadCsv(csv, 'cuentas-claras_movimientos.csv')
-  }
   const order = []
   const byDay = {}
   const dayDate = {}
   ;(s.ledgers[gid] || [])
-    .filter((e) => !e.future && catMatch(s.catFilter, e) && textMatch(s, gid, e, s.moveQuery))
+    .filter((e) => !e.future && catMatch(s.catFilter, e) && curMatch(s.curFilter, e) && payerMatch(s.payerFilter, e) && textMatch(s, gid, e, s.moveQuery))
     .slice()
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .sort(byRecency)
     .forEach((e) => {
       const key = (dayLabel(e.date) + ' · ' + fmtDateFull(e.date)).toUpperCase()
       if (!byDay[key]) { byDay[key] = []; order.push(key); dayDate[key] = e.date }
@@ -419,12 +419,14 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
           <BalanceLines lines={lines} size={15} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={exportCsv} title="Descargar lo que estás viendo en CSV" style={{ display: 'flex', alignItems: 'center', gap: 5, border: '1.5px solid #E2E8F0', background: '#fff', color: '#7C3AED', fontFamily: 'inherit', fontWeight: 800, fontSize: 12, padding: '6px 11px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap' }}>⤓ CSV</button>
+          <button onClick={actions.toggleHideAmounts} title={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} aria-label={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} style={{ border: 'none', background: 'transparent', padding: 2, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+            {s.hideAmounts ? <EyeOff size={18} color="#64748B" /> : <Eye size={18} color="#64748B" />}
+          </button>
           <div className="num" style={{ fontWeight: 700, fontSize: 22, color: arrowColor }}>{arrow}</div>
         </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <Filters cats={cats} catFilter={s.catFilter} onCat={actions.setCatFilter} query={s.moveQuery} onQuery={actions.setMoveQuery} />
+        <Filters cats={cats} catFilter={s.catFilter} onCat={actions.setCatFilter} query={s.moveQuery} onQuery={actions.setMoveQuery} cur={s.curFilter} onCur={actions.setCurFilter} currencies={currencies} payer={s.payerFilter} onPayer={actions.setPayerFilter} payers={payers} />
         {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '16px 0' }}>Sin movimientos que coincidan.</div>}
         {order.map((k) => {
           const dp = daniPctAt(s, gid, dayDate[k])

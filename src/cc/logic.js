@@ -8,9 +8,15 @@ import { fmtDateFull, monthKeyOf, todayISO, parseSpanishDate, NOMBRES_MES } from
 export const CURRENCIES = ['ARS', 'USD', 'CLP']
 const CUR_PREFIX = { ARS: '$', USD: 'US$', CLP: 'CLP$' }
 
+// "Ocultar saldos": flag global de display. Cuando está activo, fmt enmascara los
+// montos ("$ ••••"). NO afecta cálculos ni el CSV (buildCsv lo desactiva al exportar).
+let _hideAmounts = false
+export function setAmountsHidden(v) { _hideAmounts = !!v }
+
 // Formato de monto por moneda: "$4.500" / "US$188,60" / "CLP$20.429".
 export function fmt(n, cur = 'ARS') {
   const pre = CUR_PREFIX[cur] || '$'
+  if (_hideAmounts) return pre + ' ••••'
   const neg = n < 0 ? '-' : ''
   // USD conserva hasta 2 decimales; ARS/CLP redondean a entero.
   const r = cur === 'USD' ? Math.round(Math.abs(n) * 100) / 100 : Math.round(Math.abs(n))
@@ -28,16 +34,36 @@ export function memberById(state, gid, id) {
   return state.groups[gid].members.find((m) => m.id === id) || { short: '?', color: '#94A3B8', initial: '?', name: '?' }
 }
 
+// Paleta curada de iconos para elegir al crear una categoría.
+export const CATEGORY_ICONS = [
+  '🍽️', '🛒', '☕', '🍺', '🍕', '💡', '🏠', '🔥', '💧', '📶',
+  '🚕', '⛽', '🚗', '✈️', '🚌', '🎬', '🎮', '🎵', '🎉', '📚',
+  '🎁', '👕', '💇', '🧴', '💊', '🏥', '🏋️', '⚽', '🐾', '📱',
+  '💻', '🔧', '🧾', '💰', '🎓', '👶', '🧺', '🏷️',
+]
+
 // Adivina un emoji para una categoría nueva a partir de su nombre.
 export function guessIcon(name) {
   const n = (name || '').toLowerCase()
   const map = [
     ['regal', '🎁'], ['pelu', '💇'], ['farmac', '💊'], ['salud', '💊'], ['remed', '💊'],
-    ['nafta', '⛽'], ['super', '🛒'], ['merca', '🛒'], ['comid', '🍽️'], ['resto', '🍽️'],
-    ['cena', '🍽️'], ['cine', '🎬'], ['cafe', '☕'], ['taxi', '🚕'], ['transp', '🚕'],
-    ['uber', '🚕'], ['casa', '🏠'], ['hogar', '🏠'], ['expens', '🏠'], ['luz', '💡'],
-    ['gas', '🔥'], ['agua', '💧'], ['ropa', '👕'], ['viaje', '✈️'], ['gym', '🏋️'],
-    ['masco', '🐾'], ['mando', '🧺'],
+    ['medic', '🏥'], ['dent', '🦷'], ['nafta', '⛽'], ['combust', '⛽'], ['super', '🛒'],
+    ['merca', '🛒'], ['almac', '🛒'], ['comid', '🍽️'], ['resto', '🍽️'], ['delivery', '🍽️'],
+    ['cena', '🍽️'], ['almuerz', '🍽️'], ['pizza', '🍕'], ['birra', '🍺'], ['cervez', '🍺'],
+    ['bar', '🍺'], ['trago', '🍺'], ['cine', '🎬'], ['peli', '🎬'], ['netflix', '🎬'],
+    ['spotify', '🎵'], ['music', '🎵'], ['juego', '🎮'], ['fiesta', '🎉'], ['regalo', '🎁'],
+    ['cafe', '☕'], ['café', '☕'], ['taxi', '🚕'], ['transp', '🚕'], ['uber', '🚕'],
+    ['cabify', '🚕'], ['didi', '🚕'], ['colectivo', '🚌'], ['sube', '🚌'], ['bondi', '🚌'],
+    ['auto', '🚗'], ['cochera', '🚗'], ['peaje', '🚗'], ['casa', '🏠'], ['hogar', '🏠'],
+    ['expens', '🏠'], ['alquil', '🏠'], ['luz', '💡'], ['elect', '💡'], ['gas', '🔥'],
+    ['agua', '💧'], ['internet', '📶'], ['wifi', '📶'], ['celu', '📱'], ['telefon', '📱'],
+    ['ropa', '👕'], ['indument', '👕'], ['calzado', '👕'], ['viaje', '✈️'], ['vuelo', '✈️'],
+    ['hotel', '✈️'], ['gym', '🏋️'], ['gimnas', '🏋️'], ['deport', '⚽'], ['masco', '🐾'],
+    ['perr', '🐾'], ['gat', '🐾'], ['vet', '🐾'], ['mando', '🧺'], ['limpie', '🧺'],
+    ['libro', '📚'], ['estud', '🎓'], ['curso', '🎓'], ['educ', '🎓'], ['beba', '👶'],
+    ['bebe', '👶'], ['nene', '👶'], ['cosmet', '🧴'], ['belleza', '🧴'], ['compu', '💻'],
+    ['tecn', '💻'], ['herram', '🔧'], ['repar', '🔧'], ['impuesto', '🧾'], ['ahorr', '💰'],
+    ['invers', '💰'],
   ]
   for (const [k, e] of map) if (n.includes(k)) return e
   return '🏷️'
@@ -65,15 +91,27 @@ export function daniPctAt(state, gid, date) {
   return (splitAt(state, gid, date) || {})[state.me || 'dani'] || 0
 }
 
-// Fracción del gasto que me toca a MÍ (usuario logueado). null = saldado.
+// Fracción de consumo de un miembro en un gasto. null = saldado.
 // 'mine'/'theirs' se anclan al primer miembro del grupo (creador histórico de los datos).
-export function myShare(state, gid, e) {
+// Modo group: usa el % de la fecha, RENORMALIZADO entre los participantes (e.excluded fuera).
+export function shareFor(state, gid, e, memberId) {
   if (e.mode === 'settled') return null
-  const me = state.me || 'dani'
-  const anchor = ((state.groups[gid].members[0]) || {}).id
-  if (e.mode === 'full_mine') return me === anchor ? 1 : 0
-  if (e.mode === 'full_theirs') return me === anchor ? 0 : 1
-  return daniPctAt(state, gid, e.date) / 100
+  const members = state.groups[gid].members
+  const anchor = (members[0] || {}).id
+  if (e.mode === 'full_mine') return memberId === anchor ? 1 : 0
+  if (e.mode === 'full_theirs') return memberId === anchor ? 0 : 1
+  const excluded = e.excluded || []
+  if (excluded.includes(memberId)) return 0
+  const shares = splitAt(state, gid, e.date)
+  const incl = members.filter((m) => !excluded.includes(m.id))
+  const total = incl.reduce((a, m) => a + (shares[m.id] || 0), 0)
+  if (total <= 0) return incl.some((m) => m.id === memberId) ? 1 / incl.length : 0
+  return (shares[memberId] || 0) / total
+}
+
+// Fracción del gasto que me toca a MÍ (usuario logueado). null = saldado.
+export function myShare(state, gid, e) {
+  return shareFor(state, gid, e, state.me || 'dani')
 }
 
 // Neto del grupo POR MONEDA (sin conversión). nets[cur] > 0 = te deben.
@@ -195,9 +233,11 @@ export function monthLongLabel(key) { return MES_LONG[Number(key.slice(5, 7)) - 
 
 // Serie mensual real (últimos 6 meses terminando en el mes actual).
 // El gráfico totaliza ARS (no se mezclan monedas). methods = desglose por medio.
-export function buildHistory(state, gid, catFilter = [], q = '') {
+export function buildHistory(state, gid, catFilter = [], q = '', curFilter = 'all', payerFilter = 'all') {
   const showTransfer = catFilter && catFilter.length > 0 && catFilter.includes('transfer')
-  const led = (state.ledgers[gid] || []).filter((e) => !e.future && catMatch(catFilter, e) && textMatch(state, gid, e, q) && (e.kind !== 'transfer' || showTransfer))
+  const led = (state.ledgers[gid] || []).filter((e) => !e.future && catMatch(catFilter, e) && curMatch(curFilter, e) && payerMatch(payerFilter, e) && textMatch(state, gid, e, q) && (e.kind !== 'transfer' || showTransfer))
+  // moneda totalizada en el gráfico: la del filtro, o ARS por defecto (no se mezclan monedas)
+  const chartCur = curFilter && curFilter !== 'all' ? curFilter : 'ARS'
   const cur = monthKeyOf(todayISO())
   const [y, m] = cur.split('-').map(Number)
   const keys = []
@@ -207,11 +247,26 @@ export function buildHistory(state, gid, catFilter = [], q = '') {
   }
   return keys.map((key) => {
     const inMonth = led.filter((e) => monthKeyOf(e.date) === key)
-    const total = inMonth.filter((e) => (e.currency || 'ARS') === 'ARS').reduce((a, e) => a + e.amount, 0)
+    const total = inMonth.filter((e) => (e.currency || 'ARS') === chartCur).reduce((a, e) => a + e.amount, 0)
     const methods = {}
     inMonth.forEach((e) => { const k = e.methodId || 'sin'; methods[k] = (methods[k] || 0) + e.amount })
     return { key, label: monthShortLabel(key), total, methods, current: key === cur }
   })
+}
+
+// Clave de orden de creación: el sufijo numérico del id (Date.now() en runtime,
+// correlativo 'cc001'… en el seed). Es estable aunque la nube devuelva los
+// movimientos en otro orden (a diferencia del índice del array).
+export function createdKey(e) {
+  const m = String((e && e.id) || '').match(/\d+/)
+  return m ? Number(m[0]) : 0
+}
+
+// Comparador de movimientos: 1) fecha descendente; 2) a igual fecha, el creado
+// más tarde primero (el último gasto cargado aparece arriba).
+export function byRecency(a, b) {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1
+  return createdKey(b) - createdKey(a)
 }
 
 // Movimientos reales de un mes (cualquier moneda), más nuevos primero.
@@ -220,7 +275,7 @@ export function monthMovements(state, gid, key) {
   return (state.ledgers[gid] || [])
     .filter((e) => !e.future && monthKeyOf(e.date) === key)
     .slice()
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .sort(byRecency)
     .map((e) => {
       const cat = catById(state, e.categoryId)
       const payer = memberById(state, gid, e.payerId)
@@ -268,6 +323,34 @@ export function catMatch(catFilter, e) {
   return !catFilter || catFilter.length === 0 || catFilter.includes(e.categoryId)
 }
 
+// ¿La entrada pasa el filtro de moneda? cur = 'all' | 'ARS' | 'USD' | 'CLP'.
+export function curMatch(cur, e) {
+  return !cur || cur === 'all' || (e.currency || 'ARS') === cur
+}
+
+// Monedas presentes en el ledger del grupo (para el filtro de moneda), en orden fijo.
+export function groupCurrencies(state, gid) {
+  const set = new Set((state.ledgers[gid] || []).filter((e) => !e.future).map((e) => e.currency || 'ARS'))
+  return CURRENCIES.filter((c) => set.has(c))
+}
+
+// ¿La entrada pasa el filtro de pagador? payerFilter = 'all' | id de miembro.
+// Al filtrar por un pagador concreto, las transferencias (sin pagador) quedan fuera.
+export function payerMatch(payerFilter, e) {
+  if (!payerFilter || payerFilter === 'all') return true
+  if (e.kind === 'transfer') return false
+  return e.payerId === payerFilter
+}
+
+// Miembros que figuran como pagadores en el ledger del grupo (para el filtro de pagador).
+// En grupos personales no aplica (siempre pagás vos).
+export function groupPayers(state, gid) {
+  const g = state.groups[gid]
+  if (!g || g.personal) return []
+  const set = new Set((state.ledgers[gid] || []).filter((e) => !e.future && e.kind !== 'transfer' && e.payerId).map((e) => e.payerId))
+  return g.members.filter((m) => set.has(m.id))
+}
+
 // Texto buscable de un movimiento (descripción + categoría, o nombres en transferencias).
 export function entryName(state, gid, e) {
   if (e.kind === 'transfer') return 'transferencia pago ' + memberById(state, gid, e.from).short + ' ' + memberById(state, gid, e.to).short
@@ -310,15 +393,15 @@ export function rowFor(state, gid, e, opts = {}) {
 
 // Detalle de un mes: gastado y "tu parte" por moneda + transferencias + items.
 // catFilter = array de ids ([] = todas). Las transferencias no suman al gasto.
-export function monthData(state, gid, key, catFilter = [], q = '') {
+export function monthData(state, gid, key, catFilter = [], q = '', curFilter = 'all', payerFilter = 'all') {
   const rows = (state.ledgers[gid] || [])
-    .map((e, idx) => ({ e, idx }))
-    .filter((x) => !x.e.future && monthKeyOf(x.e.date) === key && catMatch(catFilter, x.e) && textMatch(state, gid, x.e, q))
-    .sort((a, b) => (a.e.date < b.e.date ? 1 : a.e.date > b.e.date ? -1 : b.idx - a.idx))
+    .filter((e) => !e.future && monthKeyOf(e.date) === key && catMatch(catFilter, e) && curMatch(curFilter, e) && payerMatch(payerFilter, e) && textMatch(state, gid, e, q))
+    .slice()
+    .sort(byRecency)
   const totals = {}
   const tuParte = {}
   const transfers = {}
-  const items = rows.map(({ e }) => {
+  const items = rows.map((e) => {
     const cur = e.currency || 'ARS'
     if (e.kind === 'transfer') {
       transfers[cur] = (transfers[cur] || 0) + e.amount
@@ -333,23 +416,27 @@ export function monthData(state, gid, key, catFilter = [], q = '') {
   return { totals, tuParte, transfers, items }
 }
 
-// Meses con movimientos (sin futuros), del más nuevo al más viejo.
-export function ledgerMonths(state, gid) {
+// Meses con movimientos, del más nuevo al más viejo.
+// includeFuture=true suma también los meses de gastos futuros (para el rango del export CSV).
+export function ledgerMonths(state, gid, includeFuture = false) {
   const set = new Set()
-  ;(state.ledgers[gid] || []).forEach((e) => { if (!e.future) set.add(monthKeyOf(e.date)) })
+  ;(state.ledgers[gid] || []).forEach((e) => { if (includeFuture || !e.future) set.add(monthKeyOf(e.date)) })
   return [...set].sort().reverse()
 }
 
 // CSV de movimientos en un rango de meses (para abrir en Sheets/Excel).
 // catFilter ([] = todas) y q (texto) permiten exportar justo lo que se está viendo filtrado.
-export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '') {
+export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '', curFilter = 'all', payerFilter = 'all') {
+  // El CSV siempre lleva números reales aunque "ocultar saldos" esté activo.
+  const wasHidden = _hideAmounts
+  _hideAmounts = false
+  try {
   const mems = state.groups[gid].members
   const anchor = mems[0] || { id: 'dani', short: 'Dani' } // 'mine' histórico
   const otherM = mems[1] || { short: 'Otro' }
   const rows = (state.ledgers[gid] || [])
-    .filter((e) => !e.future)
     .filter((e) => { const k = monthKeyOf(e.date); return (!fromKey || k >= fromKey) && (!toKey || k <= toKey) })
-    .filter((e) => catMatch(catFilter, e) && textMatch(state, gid, e, q))
+    .filter((e) => catMatch(catFilter, e) && curMatch(curFilter, e) && payerMatch(payerFilter, e) && textMatch(state, gid, e, q))
     .slice()
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
   const head = ['Fecha', 'Mes', 'Tipo', 'Descripción', 'Categoría', 'Monto', 'Moneda', 'Pagó', 'División', 'Tu parte', 'Impacto']
@@ -371,13 +458,16 @@ export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '') {
     const sh = myShare(state, gid, e)
     const consumo = sh === null ? daniPct / 100 : sh
     const tuParte = Math.round(e.amount * consumo * 100) / 100
-    const shares = splitAt(state, gid, e.date)
-    const grpLabel = mems.map((m) => m.short + ' ' + (shares[m.id] || 0) + '%').join(' / ')
+    const excluded = e.excluded || []
+    const grpLabel = mems.filter((m) => !excluded.includes(m.id)).map((m) => m.short + ' ' + Math.round(shareFor(state, gid, e, m.id) * 100) + '%').join(' / ')
     const divLabel = e.mode === 'settled' ? 'Pagaron ambos' : e.mode === 'full_mine' ? 'Todo ' + anchor.short : e.mode === 'full_theirs' ? 'Todo ' + otherM.short : grpLabel
     const imp = impactOf(state, gid, e, daniPct)
-    lines.push([fecha, mes, 'Gasto', e.desc || cat.name, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
+    lines.push([fecha, mes, e.future ? 'Gasto futuro' : 'Gasto', e.desc || cat.name, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
   })
   return '﻿' + lines.join('\n') // BOM para que Excel respete acentos
+  } finally {
+    _hideAmounts = wasHidden
+  }
 }
 
 // Revisión de datos: detecta posibles errores de carga en el ledger de un grupo.
@@ -507,14 +597,12 @@ export function parseChat(state, gid, text) {
     for (const m of members) if (m.id !== me && t.includes(' ' + m.short.toLowerCase())) from = m.id
     return { kind: 'payment', exp: { amount: amount || 0, from, to: me } }
   }
-  // pagador
+  // pagador: cualquier nombre de miembro mencionado = pagador (no hace falta decir "pagó").
   let payerId = g.personal ? me : null
   if (/pagu[eé]|lo pagu|la pagu|\byo\b/.test(t)) payerId = me
   for (const m of members) {
-    if (m.id !== me) {
-      const n = m.short.toLowerCase()
-      if (new RegExp('pag[oó]\\s+' + n).test(t) || new RegExp(n + '\\s+(lo |la )?pag').test(t)) payerId = m.id
-    }
+    const n = m.short.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (new RegExp('\\b' + n + '\\b').test(t)) payerId = m.id
   }
   // correcciones sobre el último
   if (/(eran|era|son|ser[ií]an|perd[oó]n)/.test(t) && amount) return { kind: 'correction', cor: { field: 'amount', amount } }
@@ -529,11 +617,8 @@ export function parseChat(state, gid, text) {
   const cat = resolveCat(state, gid, t)
   const split = sm ? { a: parseInt(sm[1], 10), b: parseInt(sm[2], 10) } : null
   const mode = forcedMode || 'group'
-  const finalPayer = forcedMode ? forcedPayer : payerId
+  // si no se detectó pagador, asumo que pagué yo (no preguntamos: se anota y se puede editar)
+  const finalPayer = (forcedMode ? forcedPayer : payerId) || me
   const exp = { amount, categoryId: cat.id, catName: cat.name, catIcon: cat.icon, payerId: finalPayer, cuotas, split, mode, currency, date }
-  if (!finalPayer) {
-    delete exp.payerId
-    return { kind: 'ambiguous', exp }
-  }
   return { kind: 'interpret', exp }
 }

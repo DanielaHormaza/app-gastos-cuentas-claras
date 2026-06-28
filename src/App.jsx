@@ -12,15 +12,59 @@ import { MethodDetail, MonthDetail } from './cc/Detail'
 import { Logo } from './cc/icons'
 import Login from './Login'
 import { supabase } from './supabase'
-import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit } from './cloud'
+import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage } from './cloud'
+import { setAmountsHidden } from './cc/logic'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
-const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null)].join('|')
+const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null), JSON.stringify(e.excluded || [])].join('|')
 // Snapshot id→{e,gid,fp} de todos los movimientos (para el espejo de sincronización).
 const ledSnapshot = (ledgers) => {
   const map = {}
   for (const gid in ledgers) for (const e of ledgers[gid]) map[e.id] = { e, gid, fp: expFingerprint(e) }
   return map
+}
+
+// ----- Chat compartido -----
+// Solo se sincronizan los mensajes de historial (lo que se tipea + gastos confirmados).
+// Las tarjetas transitorias (interpret/ambiguous/payment/correction/duplicate) quedan per-device.
+const MSG_SYNC_KINDS = new Set(['user', 'saved'])
+const isIntro = (m) => typeof m.id === 'string' && m.id.startsWith('w')
+const msgKey = (m) => { if (isIntro(m)) return -1; const x = String(m.id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
+const msgFp = (m) => [m.kind, m.text, m.expId, m.by, m.time, m.date].join('|')
+// Snapshot id→{m,gid,fp} de los mensajes sincronizables (espejo). 'personal' es de un solo usuario: no se sincroniza.
+const msgSnapshot = (threads) => {
+  const map = {}
+  for (const gid in threads) {
+    if (gid === 'personal') continue
+    for (const m of threads[gid]) if (MSG_SYNC_KINDS.has(m.kind)) map[m.id] = { m, gid, fp: msgFp(m) }
+  }
+  return map
+}
+// Mezcla el hilo de la nube (intro + user/saved) con las tarjetas transitorias locales, ordenado por creación.
+const mergeThreads = (prevThreads, cloudThreads) => {
+  const out = {}
+  const gids = new Set([...Object.keys(cloudThreads || {}), ...Object.keys(prevThreads || {})])
+  for (const g of gids) {
+    if (g === 'personal') { out[g] = (prevThreads || {})[g] || (cloudThreads || {})[g] || []; continue }
+    const byId = {}
+    for (const m of (cloudThreads || {})[g] || []) byId[m.id] = m
+    for (const m of (prevThreads || {})[g] || []) if (!MSG_SYNC_KINDS.has(m.kind) && !isIntro(m) && !byId[m.id]) byId[m.id] = m
+    out[g] = Object.values(byId).sort((a, b) => msgKey(a) - msgKey(b))
+  }
+  return out
+}
+
+// Guardado automático de la hoja de edición: aplica `patch` al borrador y lo escribe
+// al instante en el gasto del ledger (sin botón Confirmar). Devuelve { draft, ledgers }.
+const applyEdit = (prev, patch) => {
+  const g = prev.groupId
+  const draft = { ...prev.draft, ...patch, editedBy: prev.profile.name, editedAt: todayISO() }
+  const l = (prev.ledgers[g] || []).map((it) =>
+    it.id === prev.editId
+      ? { ...it, categoryId: draft.categoryId, amount: draft.amount, payerId: draft.payerId, methodId: draft.methodId !== undefined ? draft.methodId : it.methodId || null, mode: draft.mode || 'group', currency: draft.currency || 'ARS', excluded: draft.excluded || [], editedBy: draft.editedBy, editedAt: draft.editedAt }
+      : it,
+  )
+  return { draft, ledgers: { ...prev.ledgers, [g]: l } }
 }
 
 // Layout de dos paneles a partir de ~900px de ancho.
@@ -37,16 +81,18 @@ function useDesktop() {
 
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
 const KEY = 'cuentas-claras:v4'
+const HIDE_KEY = 'cuentas-claras:hideAmounts' // preferencia por dispositivo (no se sincroniza)
 const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'histSel']
 
 function load() {
+  const hideAmounts = localStorage.getItem(HIDE_KEY) === '1'
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return migrate({ ...makeInitialState(), ...JSON.parse(raw) })
+    if (raw) return migrate({ ...makeInitialState(), ...JSON.parse(raw), hideAmounts })
   } catch {
     /* dato corrupto: se ignora */
   }
-  return makeInitialState()
+  return { ...makeInitialState(), hideAmounts }
 }
 
 // Asegura que el historial de reparto exista para cada grupo (estado guardado previo a esta feature).
@@ -62,6 +108,9 @@ function migrate(s) {
 
 export default function App() {
   const [s, setS] = useState(load)
+  // "Ocultar saldos": sincroniza el flag de display de fmt con la preferencia actual.
+  // Se setea en render (antes que los hijos) para que los montos se enmascaren sin parpadeo.
+  setAmountsHidden(s.hideAmounts)
   const desktop = useDesktop()
   // session: undefined = cargando, null = sin sesión (mostrar login), objeto = logueado
   const [session, setSession] = useState(undefined)
@@ -69,6 +118,11 @@ export default function App() {
   const [dataErr, setDataErr] = useState(null)
   const ledSyncRef = useRef(null) // snapshot de movimientos ya sincronizados
   const catSyncRef = useRef(null) // ids de categorías ya sincronizadas
+  const msgSyncRef = useRef(null) // snapshot de mensajes ya sincronizados
+  const typingChanRef = useRef(null) // canal de "escribiendo…" (broadcast) del grupo activo
+  const typingTimerRef = useRef(null) // limpia el cartel de "escribiendo…" tras unos segundos
+  const lastTypingSentRef = useRef(0) // throttle de envío de "escribiendo…"
+  const [typingName, setTypingName] = useState(null) // quién está escribiendo en el grupo activo (otro usuario)
 
   useEffect(() => {
     const apply = (sess) => {
@@ -97,11 +151,7 @@ export default function App() {
         const cloud = await loadCloudState(session.user.id)
         // conservar el historial de chat ya guardado (por dispositivo); intro solo si no hay
         if (!cancelled) {
-          setS((prev) => {
-            const threads = {}
-            for (const g in cloud.threads) threads[g] = (prev.threads && prev.threads[g]) || cloud.threads[g]
-            return { ...cloud, threads }
-          })
+          setS((prev) => ({ ...cloud, threads: mergeThreads(prev.threads, cloud.threads), hideAmounts: prev.hideAmounts })) // chat compartido desde la nube; hideAmounts es preferencia local
           setDataReady(true)
         }
       } catch (e) {
@@ -131,6 +181,17 @@ export default function App() {
     catSyncRef.current = new Set(s.categories.map((c) => c.id))
   }, [s.categories, dataReady])
 
+  // espejo del chat → Supabase: sincroniza altas/ediciones/bajas de mensajes de historial (user/saved)
+  useEffect(() => {
+    if (!dataReady) { msgSyncRef.current = null; return }
+    const cur = msgSnapshot(s.threads)
+    const prev = msgSyncRef.current
+    if (prev === null) { msgSyncRef.current = cur; return } // primera vez tras cargar: solo snapshot
+    for (const id in cur) if (!prev[id] || prev[id].fp !== cur[id].fp) cloudUpsertMessage(cur[id].m, cur[id].gid)
+    for (const id in prev) if (!cur[id]) cloudDeleteMessage(id)
+    msgSyncRef.current = cur
+  }, [s.threads, dataReady])
+
   // TIEMPO REAL: si otro dispositivo/usuario cambia algo, recargamos los datos (sin perder navegación ni chat).
   useEffect(() => {
     if (!session?.user || !dataReady) return
@@ -145,7 +206,8 @@ export default function App() {
           const cloud = await loadCloudState(session.user.id)
           ledSyncRef.current = ledSnapshot(cloud.ledgers)
           catSyncRef.current = new Set(cloud.categories.map((c) => c.id))
-          setS((prev) => ({ ...prev, me: cloud.me, groups: cloud.groups, splits: cloud.splits, splitLog: cloud.splitLog, splitMeta: cloud.splitMeta, ledgers: cloud.ledgers, categories: cloud.categories }))
+          msgSyncRef.current = msgSnapshot(cloud.threads)
+          setS((prev) => ({ ...prev, me: cloud.me, groups: cloud.groups, splits: cloud.splits, splitLog: cloud.splitLog, splitMeta: cloud.splitMeta, ledgers: cloud.ledgers, categories: cloud.categories, threads: mergeThreads(prev.threads, cloud.threads) }))
         } catch (e) {
           console.error('[realtime] error al recargar:', e.message)
         }
@@ -155,9 +217,38 @@ export default function App() {
       .channel('cc-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'split_history' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, reload)
       .subscribe((status) => console.log('[realtime] estado del canal:', status))
     return () => { clearTimeout(timer); supabase.removeChannel(ch) }
   }, [session?.user?.id, dataReady])
+
+  // "Escribiendo…" (estilo WhatsApp): canal de broadcast efímero por grupo activo.
+  // No usa DB; solo avisa en vivo a los miembros del grupo. Solo en grupos compartidos.
+  useEffect(() => {
+    setTypingName(null)
+    clearTimeout(typingTimerRef.current)
+    const gid = s.groupId
+    const g = s.groups[gid]
+    if (!session?.user || !dataReady || !gid || gid === 'personal' || !g || g.personal) { typingChanRef.current = null; return }
+    if (session.access_token) supabase.realtime.setAuth(session.access_token)
+    const ch = supabase.channel('cc-typing-' + gid, { config: { broadcast: { self: false } } })
+    ch.on('broadcast', { event: 'typing' }, ({ payload }) => {
+      if (!payload || !payload.user) return
+      setTypingName(payload.user)
+      clearTimeout(typingTimerRef.current)
+      typingTimerRef.current = setTimeout(() => setTypingName(null), 3500)
+    }).subscribe()
+    typingChanRef.current = ch
+    return () => { clearTimeout(typingTimerRef.current); supabase.removeChannel(ch); typingChanRef.current = null }
+  }, [session?.user?.id, dataReady, s.groupId])
+
+  // Dev bypass por URL: ?dev=1 lo guarda (persiste en recargas), ?dev=0 lo limpia.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const p = new URLSearchParams(location.search).get('dev')
+    if (p === '1') localStorage.setItem('cc-dev', '1')
+    if (p === '0') localStorage.removeItem('cc-dev')
+  }, [])
 
   // Persiste solo los datos (no el estado de navegación transitorio).
   useEffect(() => {
@@ -173,7 +264,7 @@ export default function App() {
 
   // Abre la hoja de edición para un gasto del ledger.
   const openEdit = (e) =>
-    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS', createdBy: e.createdBy, editedBy: e.editedBy, editedAt: e.editedAt }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
+    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS', excluded: e.excluded || [], createdBy: e.createdBy, editedBy: e.editedBy, editedAt: e.editedAt }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
 
   // Aplica un nuevo reparto registrando el régimen anterior "hasta hoy": el nuevo % rige desde hoy.
   // Editar varias veces el mismo día NO crea regímenes extra (sólo el primero del día archiva el anterior).
@@ -258,7 +349,16 @@ export default function App() {
       }),
 
     // ---- chat ----
-    onChatInput: (v) => set({ chatInput: v }),
+    onChatInput: (v) => { set({ chatInput: v }); if (v) actions.notifyTyping() },
+    // avisa "escribiendo…" a los demás del grupo (throttle 1.5s) vía broadcast
+    notifyTyping: () => {
+      const ch = typingChanRef.current
+      if (!ch) return
+      const now = Date.now()
+      if (now - lastTypingSentRef.current < 1500) return
+      lastTypingSentRef.current = now
+      ch.send({ type: 'broadcast', event: 'typing', payload: { user: s.profile.name } })
+    },
     sendChat: () => {
       if (s.archived[gid]) return
       // varias líneas = varios gastos (uno por línea)
@@ -266,23 +366,46 @@ export default function App() {
       if (!lines.length) return
       const tm = nowTime()
       const base = Date.now()
-      const msgs = []
       const day = todayISO()
-      lines.forEach((line, i) => {
-        const id = base + i
-        msgs.push({ id: 'u' + id, role: 'user', kind: 'user', text: line, time: tm, date: day, by: s.profile.name })
-        const res = parseChat(s, gid, line)
-        let app
-        if (res.kind === 'payment') app = { id: 'a' + id, role: 'app', kind: 'payment', exp: res.exp }
-        else if (res.kind === 'ambiguous') app = { id: 'a' + id, role: 'app', kind: 'ambiguous', exp: res.exp }
-        else if (res.kind === 'interpret') app = { id: 'a' + id, role: 'app', kind: 'interpret', exp: res.exp }
-        else if (res.kind === 'correction') app = { id: 'a' + id, role: 'app', kind: 'correction', cor: res.cor }
-        else app = { id: 'a' + id, role: 'app', kind: 'text', text: 'No te entendí del todo 🤔. Probá algo como “8000 nafta pagó Juan”.' }
-        app.time = tm
-        app.date = day
-        msgs.push(app)
+      set((prev) => {
+        const g = prev.groupId
+        let cats = prev.categories
+        let ledger = prev.ledgers[g] || []
+        let splits = prev.splits
+        const msgs = []
+        lines.forEach((line, i) => {
+          const id = base + i
+          msgs.push({ id: 'u' + id, role: 'user', kind: 'user', text: line, time: tm, date: day, by: prev.profile.name })
+          // parseChat ve las categorías ya creadas en este mismo envío (evita duplicarlas)
+          const res = parseChat({ ...prev, categories: cats }, g, line)
+          let app
+          if (res.kind === 'interpret') {
+            // Auto-guardado: se anota el gasto directo (sin preguntar ni confirmar); la tarjeta queda con "Editar".
+            const exp = res.exp
+            const dup = ledger.find((e) => e.kind !== 'transfer' && e.amount === exp.amount && e.payerId === exp.payerId && e.categoryId === exp.categoryId)
+            if (dup) {
+              app = { id: 'a' + id, role: 'app', kind: 'duplicate', exp }
+            } else {
+              let catId = exp.categoryId
+              if (!catId) { catId = 'c' + id; cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }] }
+              if (exp.split) {
+                const sids = Object.keys(prev.splits[g] || {})
+                if (sids.length >= 2) splits = { ...splits, [g]: { [sids[0]]: exp.split.a, [sids[1]]: exp.split.b } }
+              }
+              const expId = 'e' + id
+              const entry = { id: expId, date: exp.date || day, categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: tm, mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
+              ledger = [...ledger, entry]
+              app = { id: 'a' + id, role: 'app', kind: 'saved', expId, exp: { ...exp, categoryId: catId } }
+            }
+          } else if (res.kind === 'payment') app = { id: 'a' + id, role: 'app', kind: 'payment', exp: res.exp }
+          else if (res.kind === 'correction') app = { id: 'a' + id, role: 'app', kind: 'correction', cor: res.cor }
+          else app = { id: 'a' + id, role: 'app', kind: 'text', text: 'No te entendí del todo 🤔. Probá algo como “8000 nafta pagó Juan”.' }
+          app.time = tm
+          app.date = day
+          msgs.push(app)
+        })
+        return { categories: cats, splits, ledgers: { ...prev.ledgers, [g]: ledger }, threads: { ...prev.threads, [g]: [...(prev.threads[g] || []), ...msgs] }, chatInput: '' }
       })
-      set((prev) => ({ threads: { ...prev.threads, [gid]: [...(prev.threads[gid] || []), ...msgs] }, chatInput: '' }))
     },
 
     confirmExp: (id) =>
@@ -408,33 +531,37 @@ export default function App() {
     // ---- hoja de edición ----
     openEdit,
     closeEdit: () => set({ editId: null, draft: null, editPanel: null }),
-    openPanel: (p) => set({ editPanel: p, catQuery: '', payerQuery: '', methodQuery: '' }),
+    openPanel: (p) => set({ editPanel: p, catQuery: '', newCatIcon: null, payerQuery: '', methodQuery: '' }),
     backToFields: () => set({ editPanel: null }),
     onAmount: (v) => {
       const n = parseInt((v || '').replace(/\D/g, '') || '0', 10)
-      set((prev) => ({ draft: { ...prev.draft, amount: n } }))
+      set((prev) => applyEdit(prev, { amount: n }))
     },
     onCatQuery: (v) => set({ catQuery: v }),
-    pickCat: (id) => set((prev) => ({ draft: { ...prev.draft, categoryId: id }, editPanel: null, catQuery: '' })),
+    setNewCatIcon: (icon) => set({ newCatIcon: icon }),
+    pickCat: (id) => set((prev) => ({ ...applyEdit(prev, { categoryId: id }), editPanel: null, catQuery: '', newCatIcon: null })),
     onCreateCat: () =>
       set((prev) => {
         const name = prev.catQuery.trim()
         if (!name) return {}
         const id = 'c' + Date.now()
-        return { categories: [...prev.categories, { id, icon: guessIcon(name), name }], draft: { ...prev.draft, categoryId: id }, editPanel: null, catQuery: '' }
+        const icon = prev.newCatIcon || guessIcon(name)
+        return { categories: [...prev.categories, { id, icon, name }], ...applyEdit(prev, { categoryId: id }), editPanel: null, catQuery: '', newCatIcon: null }
       }),
     onPayerQuery: (v) => set({ payerQuery: v }),
-    pickPayerEdit: (id) => set((prev) => ({ draft: { ...prev.draft, payerId: id }, editPanel: null, payerQuery: '' })),
+    pickPayerEdit: (id) => set((prev) => ({ ...applyEdit(prev, { payerId: id }), editPanel: null, payerQuery: '' })),
     onMethodQuery: (v) => set({ methodQuery: v }),
-    pickMethod: (id) => set((prev) => ({ draft: { ...prev.draft, methodId: id }, editPanel: null, methodQuery: '' })),
-    pickMode: (k) => set((prev) => ({ draft: { ...prev.draft, mode: k }, editPanel: null })),
-    pickCurrency: (cur) => set((prev) => ({ draft: { ...prev.draft, currency: cur } })),
-    onSave: () =>
+    pickMethod: (id) => set((prev) => ({ ...applyEdit(prev, { methodId: id }), editPanel: null, methodQuery: '' })),
+    pickMode: (k) => set((prev) => ({ ...applyEdit(prev, { mode: k }), editPanel: null })),
+    toggleParticipant: (mid) =>
       set((prev) => {
-        const g = prev.groupId
-        const l = (prev.ledgers[g] || []).map((it) => (it.id === prev.editId ? { ...it, categoryId: prev.draft.categoryId, amount: prev.draft.amount, payerId: prev.draft.payerId, methodId: prev.draft.methodId !== undefined ? prev.draft.methodId : it.methodId || null, mode: prev.draft.mode || 'group', currency: prev.draft.currency || 'ARS', editedBy: prev.profile.name, editedAt: todayISO() } : it))
-        return { ledgers: { ...prev.ledgers, [g]: l }, editId: null, draft: null, editPanel: null }
+        const cur = prev.draft.excluded || []
+        const next = cur.includes(mid) ? cur.filter((x) => x !== mid) : [...cur, mid]
+        // debe quedar al menos un participante: no permitir excluir al último
+        if (next.length >= prev.groups[prev.groupId].members.length) return {}
+        return applyEdit(prev, { excluded: next })
       }),
+    pickCurrency: (cur) => set((prev) => applyEdit(prev, { currency: cur })),
     onDelete: () =>
       set((prev) => {
         const g = prev.groupId
@@ -446,7 +573,15 @@ export default function App() {
     toggleMonth: (idx) => set((prev) => ({ expandedMonths: { ...prev.expandedMonths, [idx]: !prev.expandedMonths[idx] } })),
     setHistSel: (g, key) => set((prev) => ({ histSel: { ...prev.histSel, [g]: key } })),
     setCatFilter: (id) => set({ catFilter: id }),
+    setCurFilter: (v) => set({ curFilter: v }),
+    setPayerFilter: (v) => set({ payerFilter: v }),
     setMoveQuery: (v) => set({ moveQuery: v }),
+    toggleHideAmounts: () =>
+      set((prev) => {
+        const v = !prev.hideAmounts
+        try { localStorage.setItem(HIDE_KEY, v ? '1' : '0') } catch { /* sin storage: solo en memoria */ }
+        return { hideAmounts: v }
+      }),
     openMethodDetail: (mid) => set({ screen: 'methodDetail', methodId: mid }),
     openMonthDetail: (key) => set({ screen: 'monthDetail', monthKey: key, monthFilter: null }),
     setMonthFilter: (id) => set({ monthFilter: id }),
@@ -558,7 +693,7 @@ export default function App() {
   // Pantalla activa (todo lo que no es la lista) + overlay de edición.
   const screenEl = (
     <>
-      {s.screen === 'chat' && <Chat s={s} actions={actions} />}
+      {s.screen === 'chat' && <Chat s={s} actions={actions} typingName={typingName} />}
       {s.screen === 'profile' && <Profile s={s} actions={actions} />}
       {s.screen === 'archived' && <Archived s={s} actions={actions} />}
       {s.screen === 'newgroup' && <NewGroup s={s} actions={actions} />}
@@ -574,22 +709,31 @@ export default function App() {
       <div style={{ opacity: 0.4 }}><Logo size={56} /></div>
     </div>
   )
-  if (session === undefined) return <Splash />
-  if (!session) return <Login />
-  if (dataErr) {
-    return (
-      <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: '#e6e9f2', padding: 24, textAlign: 'center' }}>
-        <div style={{ fontSize: 34 }}>😕</div>
-        <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220' }}>No pudimos cargar tus datos</div>
-        <div style={{ fontSize: 13, color: '#64748B', fontWeight: 600, maxWidth: 300 }}>{dataErr}</div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-          <button onClick={() => window.location.reload()} style={{ border: 'none', background: '#7C3AED', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 13.5, padding: '10px 18px', borderRadius: 12, cursor: 'pointer' }}>Reintentar</button>
-          <button onClick={() => supabase.auth.signOut()} style={{ border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontFamily: 'inherit', fontWeight: 800, fontSize: 13.5, padding: '10px 18px', borderRadius: 12, cursor: 'pointer' }}>Cerrar sesión</button>
+  // Bypass SOLO para desarrollo local: salta el login y usa los datos de demo (makeInitialState).
+  // Nunca se activa en producción (import.meta.env.DEV es false en el build).
+  // Activar: abrir con ?dev=1 en la URL (queda guardado), o localStorage.setItem('cc-dev','1').
+  // Desactivar: localStorage.removeItem('cc-dev') (o abrir con ?dev=0) y recargar.
+  const devParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('dev') : null
+  const devBypass = import.meta.env.DEV && typeof localStorage !== 'undefined' && (localStorage.getItem('cc-dev') === '1' || devParam === '1') && devParam !== '0'
+
+  if (!devBypass) {
+    if (session === undefined) return <Splash />
+    if (!session) return <Login />
+    if (dataErr) {
+      return (
+        <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: '#e6e9f2', padding: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 34 }}>😕</div>
+          <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220' }}>No pudimos cargar tus datos</div>
+          <div style={{ fontSize: 13, color: '#64748B', fontWeight: 600, maxWidth: 300 }}>{dataErr}</div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+            <button onClick={() => window.location.reload()} style={{ border: 'none', background: '#7C3AED', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 13.5, padding: '10px 18px', borderRadius: 12, cursor: 'pointer' }}>Reintentar</button>
+            <button onClick={() => supabase.auth.signOut()} style={{ border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontFamily: 'inherit', fontWeight: 800, fontSize: 13.5, padding: '10px 18px', borderRadius: 12, cursor: 'pointer' }}>Cerrar sesión</button>
+          </div>
         </div>
-      </div>
-    )
+      )
+    }
+    if (!dataReady) return <Splash />
   }
-  if (!dataReady) return <Splash />
 
   if (desktop) {
     return (

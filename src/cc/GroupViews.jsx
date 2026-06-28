@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { compute, fmt, buildHistory, catById, memberById, monthLongLabel, monthData, ledgerMonths, buildCsv, groupCategories, CURRENCIES } from './logic'
+import { compute, fmt, buildHistory, catById, memberById, monthLongLabel, monthData, ledgerMonths, buildCsv, groupCategories, groupCurrencies, groupPayers, curMatch, catMatch, payerMatch, textMatch, CURRENCIES } from './logic'
 import { monthKeyOf } from './dates'
 import { METHOD_COLORS } from './initialState'
 import { Chevron, ChevronDown } from './icons'
@@ -22,9 +22,19 @@ export function Futuros({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const c = compute(s, gid)
-  const fut = (s.ledgers[gid] || []).filter((e) => e.future).slice().sort((a, b) => (a.date < b.date ? -1 : 1))
+  const curFilter = s.curFilter || 'all'
+  const payerFilter = s.payerFilter || 'all'
+  const catFilter = s.catFilter
+  const q = s.moveQuery
+  const allFut = (s.ledgers[gid] || []).filter((e) => e.future).slice().sort((a, b) => (a.date < b.date ? -1 : 1))
+  // categorías/monedas/pagadores presentes entre los gastos futuros (cada filtro se muestra solo si aplica)
+  const futCats = s.categories.filter((ct) => allFut.some((e) => e.categoryId === ct.id))
+  const futCurrencies = CURRENCIES.filter((cu) => allFut.some((e) => (e.currency || 'ARS') === cu))
+  const futPayers = g.members.filter((m) => allFut.some((e) => e.kind !== 'transfer' && e.payerId === m.id))
+  const fut = allFut.filter((e) => curMatch(curFilter, e) && catMatch(catFilter, e) && payerMatch(payerFilter, e) && textMatch(s, gid, e, q))
+  const chartCur = curFilter !== 'all' ? curFilter : 'ARS'
 
-  if (g.personal || fut.length === 0) {
+  if (g.personal || allFut.length === 0) {
     return (
       <Scroll>
         <div style={{ textAlign: 'center', padding: '36px 16px', color: '#B6BFCC' }}>
@@ -39,28 +49,36 @@ export function Futuros({ s, actions }) {
   const byKey = {}
   const order = []
   fut.forEach((e) => { const k = monthKeyOf(e.date); if (!byKey[k]) { byKey[k] = []; order.push(k) } byKey[k].push(e) })
-  const totalAmbos = fut.filter((e) => (e.currency || 'ARS') === 'ARS').reduce((a, e) => a + e.amount, 0)
+  const totalAmbos = fut.filter((e) => (e.currency || 'ARS') === chartCur).reduce((a, e) => a + e.amount, 0)
 
   return (
     <Scroll>
+      <Filters cats={futCats} catFilter={catFilter} onCat={actions.setCatFilter} query={q} onQuery={actions.setMoveQuery} cur={curFilter} onCur={actions.setCurFilter} currencies={futCurrencies} payer={payerFilter} onPayer={actions.setPayerFilter} payers={futPayers} />
+
+      {fut.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '24px 16px', color: '#B6BFCC' }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>🗓️</div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Sin gastos futuros que coincidan con los filtros.</div>
+        </div>
+      ) : (<>
       <div style={{ borderRadius: 18, padding: '14px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.13),rgba(124,58,237,.13))' }}>
-        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', letterSpacing: '0.05em', marginBottom: 10 }}>COMPROMETIDO · PRÓXIMOS MESES</div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', letterSpacing: '0.05em', marginBottom: 10 }}>COMPROMETIDO · PRÓXIMOS MESES · {chartCur}</div>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Total de ambos</div>
-            <div className="num" style={{ fontWeight: 700, fontSize: 23, letterSpacing: '-0.02em', color: '#0B1220' }}>{fmt(totalAmbos)}</div>
+            <div className="num" style={{ fontWeight: 700, fontSize: 23, letterSpacing: '-0.02em', color: '#0B1220' }}>{fmt(totalAmbos, chartCur)}</div>
           </div>
           <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(124,58,237,.2)' }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800 }}>Tu parte</div>
-            <div className="num" style={{ fontWeight: 700, fontSize: 23, letterSpacing: '-0.02em', color: '#7C3AED' }}>{fmt((totalAmbos * c.daniPct) / 100)}</div>
+            <div className="num" style={{ fontWeight: 700, fontSize: 23, letterSpacing: '-0.02em', color: '#7C3AED' }}>{fmt((totalAmbos * c.daniPct) / 100, chartCur)}</div>
           </div>
         </div>
       </div>
 
       {order.map((k, idx) => {
         const items = byKey[k]
-        const mTotal = items.filter((e) => (e.currency || 'ARS') === 'ARS').reduce((a, e) => a + e.amount, 0)
+        const mTotal = items.filter((e) => (e.currency || 'ARS') === chartCur).reduce((a, e) => a + e.amount, 0)
         const expanded = !!s.expandedMonths[idx]
         return (
           <div key={k} style={{ background: '#fff', borderRadius: 18, padding: 14, boxShadow: cardShadow, border: '1px solid #EEF1F6' }}>
@@ -68,8 +86,8 @@ export function Futuros({ s, actions }) {
               <span style={{ flexShrink: 0, transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .2s ease', display: 'inline-flex' }}><ChevronDown size={16} color="#94A3B8" w={2.8} /></span>
               <div style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{monthLongLabel(k)}</div>
               <div style={{ textAlign: 'right' }}>
-                <div className="num" style={{ fontWeight: 700, fontSize: 17, color: '#0B1220', letterSpacing: '-0.02em' }}>{fmt(mTotal)}</div>
-                <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, whiteSpace: 'nowrap' }}>tu parte {fmt((mTotal * c.daniPct) / 100)}</div>
+                <div className="num" style={{ fontWeight: 700, fontSize: 17, color: '#0B1220', letterSpacing: '-0.02em' }}>{fmt(mTotal, chartCur)}</div>
+                <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, whiteSpace: 'nowrap' }}>tu parte {fmt((mTotal * c.daniPct) / 100, chartCur)}</div>
               </div>
             </div>
             {expanded && (
@@ -95,6 +113,7 @@ export function Futuros({ s, actions }) {
           </div>
         )
       })}
+      </>)}
     </Scroll>
   )
 }
@@ -104,9 +123,14 @@ export function Historicos({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const catFilter = s.catFilter
+  const curFilter = s.curFilter || 'all'
+  const payerFilter = s.payerFilter || 'all'
   const q = s.moveQuery
   const cats = groupCategories(s, gid)
-  const months = buildHistory(s, gid, catFilter, q)
+  const currencies = groupCurrencies(s, gid)
+  const payers = groupPayers(s, gid)
+  const chartCur = curFilter !== 'all' ? curFilter : 'ARS'
+  const months = buildHistory(s, gid, catFilter, q, curFilter, payerFilter)
   const histMax = Math.max(1, ...months.map((m) => m.total))
   const selKey = s.histSel[gid] || months[months.length - 1].key
   const sel = months.find((m) => m.key === selKey) || months[months.length - 1]
@@ -114,18 +138,17 @@ export function Historicos({ s, actions }) {
 
   return (
     <Scroll>
-      {/* exportar */}
-      {monthKeys.length > 0 && <ExportBar s={s} gid={gid} monthKeys={monthKeys} />}
+      {/* la descarga CSV vive en Ajustes del grupo y en Mi perfil (no en la pantalla principal) */}
 
       {/* filtros: categorías + buscador por nombre */}
-      <Filters cats={cats} catFilter={catFilter} onCat={actions.setCatFilter} query={q} onQuery={actions.setMoveQuery} />
+      <Filters cats={cats} catFilter={catFilter} onCat={actions.setCatFilter} query={q} onQuery={actions.setMoveQuery} cur={curFilter} onCur={actions.setCurFilter} currencies={currencies} payer={payerFilter} onPayer={actions.setPayerFilter} payers={payers} />
 
       {/* bar chart (ARS) */}
       <div style={{ background: '#fff', borderRadius: 18, padding: '15px 16px', boxShadow: cardShadow }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 13 }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>Gastos por mes</div>
-            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginTop: 1 }}>{monthLongLabel(sel.key)} · en ARS</div>
+            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginTop: 1 }}>{monthLongLabel(sel.key)} · en {chartCur}</div>
           </div>
           <div className="num" style={{ fontWeight: 700, fontSize: 22, letterSpacing: '-0.02em', color: '#0B1220' }}>{fmt(sel.total)}</div>
         </div>
@@ -146,8 +169,8 @@ export function Historicos({ s, actions }) {
 
       <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '4px 4px 0' }}>MOVIMIENTOS POR MES</div>
       {monthKeys.map((k) => {
-        const { totals, tuParte, transfers, items } = monthData(s, gid, k, catFilter, q)
-        if ((catFilter.length || q) && items.length === 0) return null
+        const { totals, tuParte, transfers, items } = monthData(s, gid, k, catFilter, q, curFilter, payerFilter)
+        if ((catFilter.length || q || curFilter !== 'all' || payerFilter !== 'all') && items.length === 0) return null
         const spendCurs = CURRENCIES.filter((cu) => totals[cu])
         const trCurs = CURRENCIES.filter((cu) => transfers[cu])
         const mainCurs = spendCurs.length ? spendCurs : trCurs
@@ -178,7 +201,7 @@ export function Historicos({ s, actions }) {
 }
 
 /** Barra de exportación a CSV con rango de meses (desde / hasta). */
-function ExportBar({ s, gid, monthKeys }) {
+export function ExportBar({ s, gid, monthKeys }) {
   const asc = monthKeys.slice().reverse()
   const [from, setFrom] = useState(asc[0])
   const [to, setTo] = useState(asc[asc.length - 1])

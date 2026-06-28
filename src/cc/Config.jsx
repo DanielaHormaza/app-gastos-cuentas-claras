@@ -1,5 +1,7 @@
 import { Close, Plus, Archive } from './icons'
 import { fmtDateFull } from './dates'
+import { ledgerMonths } from './logic'
+import { ExportBar } from './GroupViews'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
 const sectionCard = { background: '#fff', borderRadius: 16, padding: 12, boxShadow: cardShadow }
@@ -10,6 +12,7 @@ export default function Config({ s, actions }) {
   const g = s.groups[gid]
   const sp = s.splits[gid] || {}
   const meta = (s.splitMeta && s.splitMeta[gid]) || {}
+  const monthKeys = ledgerMonths(s, gid, true) // incluye meses de gastos futuros en el rango del export
 
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 14, background: '#F4F6FA', display: 'flex', flexDirection: 'column', animation: 'ccScr .26s cubic-bezier(.22,1,.36,1)' }}>
@@ -81,6 +84,14 @@ export default function Config({ s, actions }) {
             {meta.by ? 'Modificado por ' + meta.by + ' · ' + fmtDateFull(meta.at) : 'Sin cambios todavía · rige el reparto inicial'}
           </div>
         </div>
+
+        {/* exportar a CSV */}
+        {monthKeys.length > 0 && (
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 13, color: '#64748B', marginBottom: 8, padding: '0 2px' }}>Exportar movimientos</div>
+            <ExportBar s={s} gid={gid} monthKeys={monthKeys} />
+          </div>
+        )}
 
         {/* acciones */}
         <div style={{ background: '#fff', borderRadius: 16, padding: '4px 12px', boxShadow: cardShadow }}>

@@ -57,11 +57,33 @@ create table if not exists expenses (
   payer_key text,
   mode text default 'group',
   cuota jsonb,
+  excluded jsonb,
   future boolean default false,
   from_key text, to_key text,
   created_by text, edited_by text, edited_at date,
   created_at timestamptz default now()
 );
+-- Para bases ya creadas (la columna de arriba solo aplica en instalaciones nuevas):
+alter table expenses add column if not exists excluded jsonb;
+
+-- Mensajes del chat: historial COMPARTIDO por grupo (todos ven lo mismo en tiempo real).
+create table if not exists messages (
+  id text primary key,
+  group_id text references groups on delete cascade,
+  role text,
+  kind text,
+  text text,
+  exp_id text,
+  by_name text,
+  date text,
+  time text,
+  created_at timestamptz default now()
+);
+alter table messages enable row level security;
+drop policy if exists "messages member access" on messages;
+create policy "messages member access" on messages for all using (is_group_member(group_id)) with check (is_group_member(group_id));
+-- Realtime para el chat (si ya estaba agregada, este ALTER da error inofensivo: ignoralo).
+alter publication supabase_realtime add table messages;
 
 -- ---------- SEGURIDAD (RLS) ----------
 alter table profiles enable row level security;

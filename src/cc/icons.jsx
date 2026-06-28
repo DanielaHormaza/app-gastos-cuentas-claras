@@ -37,6 +37,12 @@ export const Archive = ({ size = 18, color = '#64748B', w = 2.2 }) => (
 export const Lock = ({ size = 15, color = '#94A3B8', w = 2.2 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
 )
+export const Eye = ({ size = 18, color = '#64748B', w = 2.2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+)
+export const EyeOff = ({ size = 18, color = '#64748B', w = 2.2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 7 11 7a9.12 9.12 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24M1 1l22 22" /></svg>
+)
 export const SplitIcon = ({ size = 18, color = '#7C3AED', w = 2.2 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base} style={{ flexShrink: 0 }}><path d="M3 12h18M12 3v18" /></svg>
 )

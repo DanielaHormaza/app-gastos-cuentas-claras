@@ -1,5 +1,5 @@
 import { Back } from './icons'
-import { fmt, catById, buildHistory, monthData, monthLongLabel, groupCategories, CURRENCIES } from './logic'
+import { fmt, catById, buildHistory, monthData, monthLongLabel, groupCategories, groupCurrencies, groupPayers, CURRENCIES } from './logic'
 import { fmtDateFull } from './dates'
 import { Filters } from './CategoryFilter'
 
@@ -61,7 +61,9 @@ export function MonthDetail({ s, actions }) {
   const g = s.groups[gid]
   const key = s.monthKey || '2026-06'
   const cats = groupCategories(s, gid)
-  const { totals, tuParte, transfers, items } = monthData(s, gid, key, s.catFilter, s.moveQuery)
+  const currencies = groupCurrencies(s, gid)
+  const payers = groupPayers(s, gid)
+  const { totals, tuParte, transfers, items } = monthData(s, gid, key, s.catFilter, s.moveQuery, s.curFilter, s.payerFilter)
   const curs = CURRENCIES.filter((cu) => totals[cu])
   const trCurs = CURRENCIES.filter((cu) => transfers[cu])
 
@@ -69,7 +71,7 @@ export function MonthDetail({ s, actions }) {
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#F4F6FA', animation: 'ccIn .26s ease' }}>
       <Header title={monthLongLabel(key)} onBack={actions.backToHist} />
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <Filters cats={cats} catFilter={s.catFilter} onCat={actions.setCatFilter} query={s.moveQuery} onQuery={actions.setMoveQuery} />
+        <Filters cats={cats} catFilter={s.catFilter} onCat={actions.setCatFilter} query={s.moveQuery} onQuery={actions.setMoveQuery} cur={s.curFilter} onCur={actions.setCurFilter} currencies={currencies} payer={s.payerFilter} onPayer={actions.setPayerFilter} payers={payers} />
 
         <div style={{ borderRadius: 16, padding: '14px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
@@ -98,7 +100,7 @@ export function MonthDetail({ s, actions }) {
         {items.length === 0 && (
           <div style={{ textAlign: 'center', padding: '30px 16px', color: '#B6BFCC' }}>
             <div style={{ fontSize: 30, marginBottom: 8 }}>🧾</div>
-            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Sin movimientos{s.catFilter.length || s.moveQuery ? ' que coincidan' : ''} en este mes.</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Sin movimientos{s.catFilter.length || s.moveQuery || (s.curFilter && s.curFilter !== 'all') || (s.payerFilter && s.payerFilter !== 'all') ? ' que coincidan' : ''} en este mes.</div>
           </div>
         )}
       </div>

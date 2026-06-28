@@ -50,11 +50,73 @@ export default function CategoryFilter({ value = [], cats, onChange }) {
   )
 }
 
-/** Barra de filtros: categorías (multi) + buscador por nombre de movimiento. */
-export function Filters({ cats, catFilter, onCat, query, onQuery }) {
+/** Filtro de moneda (segmentado): Todas + las monedas presentes en el grupo. */
+export function CurrencyFilter({ value = 'all', currencies, onChange }) {
+  const opts = ['all', ...currencies]
+  return (
+    <div style={{ display: 'flex', gap: 4, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: 4, boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)' }}>
+      {opts.map((o) => {
+        const on = value === o
+        return (
+          <button key={o} onClick={() => onChange(o)} style={{ flex: 1, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, padding: '7px 6px', borderRadius: 10, background: on ? '#7C3AED' : 'transparent', color: on ? '#fff' : '#64748B', transition: 'background .15s' }}>{o === 'all' ? 'Todas' : o}</button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Filtro de pagador (desplegable single-select): Todos + los miembros que pagaron. */
+function PayerFilter({ value = 'all', payers, onChange }) {
+  const [open, setOpen] = useState(false)
+  const sel = payers.find((m) => m.id === value)
+  const active = value !== 'all' && sel
+  const label = active ? sel.short : 'Todos los pagadores'
+  const avatar = (m, size) => (
+    <span style={{ width: size, height: size, borderRadius: '50%', background: m.color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.5, fontWeight: 800, flexShrink: 0 }}>{m.initial}</span>
+  )
+
+  return (
+    <div style={{ flexShrink: 0, position: 'relative', zIndex: open ? 30 : 'auto' }}>
+      <div onClick={() => setOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 9, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '10px 13px', cursor: 'pointer', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)' }}>
+        {active ? avatar(sel, 18) : <span style={{ fontSize: 16 }}>👤</span>}
+        <span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: active ? '#0B1220' : '#64748B' }}>{label}</span>
+        {active && <span onClick={(e) => { e.stopPropagation(); onChange('all') }} style={{ fontSize: 12, fontWeight: 800, color: '#7C3AED' }}>Limpiar</span>}
+        <span style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s', display: 'inline-flex' }}><ChevronDown size={16} color="#94A3B8" w={2.6} /></span>
+      </div>
+
+      {open && <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />}
+      {open && (
+        <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 6, zIndex: 31, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, boxShadow: '0 18px 44px -16px rgba(15,23,42,.45)', overflow: 'hidden' }}>
+          <div style={{ maxHeight: 250, overflowY: 'auto', padding: 6 }}>
+            <div onClick={() => { onChange('all'); setOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 9px', borderRadius: 10, cursor: 'pointer', background: value === 'all' ? '#F1ECFD' : 'transparent' }}>
+              <span style={{ fontSize: 17, width: 22, textAlign: 'center' }}>👤</span>
+              <span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: value === 'all' ? '#7C3AED' : '#334155' }}>Todos los pagadores</span>
+              {value === 'all' && <Check size={16} />}
+            </div>
+            {payers.map((m) => {
+              const on = value === m.id
+              return (
+                <div key={m.id} onClick={() => { onChange(m.id); setOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 9px', borderRadius: 10, cursor: 'pointer', background: on ? '#F1ECFD' : 'transparent' }}>
+                  <span style={{ width: 22, textAlign: 'center', display: 'inline-flex', justifyContent: 'center' }}>{avatar(m, 22)}</span>
+                  <span style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: on ? '#0B1220' : '#334155' }}>{m.short}</span>
+                  {on && <Check size={16} />}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Barra de filtros: categorías (multi) + moneda + pagador + buscador por nombre de movimiento. */
+export function Filters({ cats, catFilter, onCat, query, onQuery, cur, onCur, currencies = [], payer, onPayer, payers = [] }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
       {cats.length > 0 && <CategoryFilter value={catFilter} cats={cats} onChange={onCat} />}
+      {(currencies.length > 1 || (cur && cur !== 'all')) && <CurrencyFilter value={cur} currencies={currencies} onChange={onCur} />}
+      {(payers.length > 1 || (payer && payer !== 'all')) && <PayerFilter value={payer} payers={payers} onChange={onPayer} />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '10px 13px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)' }}>
         <Search />
         <input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Buscar movimiento…" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontWeight: 700, fontSize: 14, color: '#0B1220', width: '100%', fontFamily: 'inherit' }} />

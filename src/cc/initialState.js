@@ -38,6 +38,7 @@ export function makeInitialState() {
     draft: null,
     editPanel: null, // null | cat | payer | method | split
     catQuery: '',
+    newCatIcon: null, // icono elegido para la categoría que se está creando (null = autoguess)
     payerQuery: '',
     methodQuery: '',
     // ---- otros estados de UI ----
@@ -49,7 +50,10 @@ export function makeInitialState() {
     expandedMonths: { 0: true },
     histSel: {},
     catFilter: [], // categorías seleccionadas en el filtro ([] = todas)
+    curFilter: 'all', // filtro por moneda ('all' = todas | 'ARS' | 'USD' | 'CLP')
+    payerFilter: 'all', // filtro por quién pagó ('all' = todos | id de miembro)
     moveQuery: '', // búsqueda por nombre de movimiento
+    hideAmounts: false, // "ocultar saldos": enmascara los montos (preferencia por dispositivo)
     newGroup: { name: '', desc: '', members: [], memberName: '', invited: false },
     // config de grupo
     addingMember: false,

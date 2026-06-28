@@ -1,4 +1,4 @@
-import { compute, catById, memberById, guessIcon } from './logic'
+import { catById, memberById, guessIcon, CATEGORY_ICONS } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, Close, ChevronDown, Check, Search, Trash, Plus, SplitIcon } from './icons'
 
@@ -10,8 +10,19 @@ export default function EditSheet({ s, actions }) {
   const gid = s.groupId
   const g = s.groups[gid]
   const dr = s.draft
-  const c = compute(s, gid)
   const panel = s.editPanel
+  // Etiquetas de división (estilo Splitwise): nombran a las personas para que sean claras
+  // y correctas para cualquiera (no "yo/ellos", que dependía de quién mira). full_mine/theirs
+  // se anclan al primer miembro del grupo (el creador histórico).
+  const sp = s.splits[gid] || {}
+  const anchor = g.members[0] || { short: 'Uno' }
+  const other = g.members.find((m) => m.id !== anchor.id) || { short: 'la otra persona' }
+  const splitLabels = {
+    group: 'Se divide: ' + g.members.map((m) => m.short + ' ' + (sp[m.id] || 0) + '%').join(' · '),
+    full_mine: 'Todo a cargo de ' + anchor.short,
+    full_theirs: 'Todo a cargo de ' + other.short,
+    settled: 'Pagaron ambos · saldado',
+  }
 
   return (
     <>
@@ -19,22 +30,21 @@ export default function EditSheet({ s, actions }) {
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: '#fff', borderRadius: '28px 28px 0 0', padding: '10px 22px 26px', zIndex: 11, animation: 'ccUp .3s cubic-bezier(.22,1,.36,1)', boxShadow: '0 -20px 50px -20px rgba(15,23,42,.4)' }}>
         <div style={{ width: 40, height: 5, borderRadius: 999, background: '#E2E8F0', margin: '6px auto 14px' }} />
 
-        {panel == null && <Fields s={s} g={g} dr={dr} c={c} actions={actions} />}
+        {panel == null && <Fields s={s} g={g} dr={dr} actions={actions} splitLabels={splitLabels} />}
         {panel === 'cat' && <CatPanel s={s} dr={dr} actions={actions} />}
         {panel === 'payer' && <PayerPanel s={s} g={g} dr={dr} actions={actions} />}
         {panel === 'method' && <MethodPanel s={s} dr={dr} actions={actions} />}
-        {panel === 'split' && <SplitPanel dr={dr} c={c} me={(g.members.find((m) => m.id === (s.me || 'dani')) || {}).short || 'Vos'} actions={actions} />}
+        {panel === 'split' && <SplitPanel dr={dr} splitLabels={splitLabels} actions={actions} />}
+        {panel === 'participants' && <ParticipantsPanel g={g} dr={dr} actions={actions} />}
       </div>
     </>
   )
 }
 
-function Fields({ s, g, dr, c, actions }) {
+function Fields({ s, g, dr, actions, splitLabels }) {
   const cat = catById(s, dr.categoryId)
   const payer = memberById(s, g.id, dr.payerId)
   const meth = s.methods.find((x) => x.id === dr.methodId)
-  const me = (g.members.find((m) => m.id === (s.me || 'dani')) || {}).short || 'Vos'
-  const splitLabels = { group: `Según el grupo (${c.daniPct}% ${me})`, full_mine: 'Lo debo todo yo', full_theirs: 'Lo deben todo', settled: 'Pagamos ambos (saldado)' }
   return (
     <div style={{ animation: 'ccFade .15s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -84,23 +94,37 @@ function Fields({ s, g, dr, c, actions }) {
             <ChevronDown size={18} color="#94A3B8" w={2.6} />
           </div>
           <div style={label}>CÓMO SE DIVIDE</div>
-          <div onClick={() => actions.openPanel('split')} style={{ ...fieldBox, padding: 11, marginBottom: 20 }}>
+          <div onClick={() => actions.openPanel('split')} style={{ ...fieldBox, padding: 11, marginBottom: g.members.length > 2 && (dr.mode || 'group') === 'group' ? 14 : 20 }}>
             <SplitIcon />
             <span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: '#0B1220' }}>{splitLabels[dr.mode || 'group']}</span>
             <ChevronDown size={18} color="#94A3B8" w={2.6} />
           </div>
+          {g.members.length > 2 && (dr.mode || 'group') === 'group' && (() => {
+            const inc = g.members.length - (dr.excluded || []).length
+            return (
+              <>
+                <div style={label}>PARTICIPANTES</div>
+                <div onClick={() => actions.openPanel('participants')} style={{ ...fieldBox, padding: 11, marginBottom: 20 }}>
+                  <span style={{ fontSize: 16 }}>👥</span>
+                  <span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: '#0B1220' }}>{inc === g.members.length ? 'Participan todos' : inc + ' de ' + g.members.length + ' participan'}</span>
+                  <ChevronDown size={18} color="#94A3B8" w={2.6} />
+                </div>
+              </>
+            )
+          })()}
         </>
       )}
 
       <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={actions.onDelete} style={{ width: 50, border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Trash /></button>
-        <button onClick={actions.onSave} style={{ flex: 1, border: 'none', background: BRAND_GRADIENT, borderRadius: 13, padding: 13, fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#fff', cursor: 'pointer', boxShadow: '0 8px 20px -8px rgba(59,130,246,.6)' }}>Guardar cambios</button>
+        <button onClick={actions.closeEdit} style={{ flex: 1, border: 'none', background: BRAND_GRADIENT, borderRadius: 13, padding: 13, fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#fff', cursor: 'pointer', boxShadow: '0 8px 20px -8px rgba(59,130,246,.6)' }}>Listo</button>
       </div>
-      {(dr.createdBy || dr.editedBy) && (
-        <div style={{ textAlign: 'center', fontSize: 11, color: '#B6BFCC', fontWeight: 700, marginTop: 12 }}>
-          {dr.createdBy ? 'Cargado por ' + dr.createdBy : ''}{dr.editedBy ? ' · editado por ' + dr.editedBy : ''}
-        </div>
-      )}
+      <div style={{ textAlign: 'center', fontSize: 11, color: '#B6BFCC', fontWeight: 700, marginTop: 12 }}>
+        ✓ Los cambios se guardan solos
+        {(dr.createdBy || dr.editedBy) && (
+          <div style={{ marginTop: 2 }}>{dr.createdBy ? 'Cargado por ' + dr.createdBy : ''}{dr.editedBy ? ' · editado por ' + dr.editedBy : ''}</div>
+        )}
+      </div>
     </div>
   )
 }
@@ -123,20 +147,31 @@ function CatPanel({ s, dr, actions }) {
   const list = s.categories.filter((ct) => !q || ct.name.toLowerCase().includes(q))
   const showCreate = !!q && !s.categories.some((ct) => ct.name.toLowerCase() === q)
   const createLabel = s.catQuery.trim()
+  const chosenIcon = s.newCatIcon || guessIcon(createLabel) // el elegido manualmente, o el sugerido por el nombre
   return (
     <div style={{ animation: 'ccScr .22s ease' }}>
       <PanelHeader title="Categoría" onBack={actions.backToFields} />
       <SearchBox value={s.catQuery} onChange={actions.onCatQuery} placeholder="Buscar o crear categoría…" />
       <div style={{ maxHeight: 300, overflowY: 'auto' }}>
         {showCreate && (
-          <div onClick={actions.onCreateCat} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 9px', borderRadius: 12, background: '#F1ECFD', marginBottom: 6, cursor: 'pointer' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{guessIcon(createLabel)}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 14, color: '#7C3AED' }}>Crear «{createLabel}»</div>
-              <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Nueva categoría</div>
+          <>
+            <div onClick={actions.onCreateCat} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 9px', borderRadius: 12, background: '#F1ECFD', marginBottom: 6, cursor: 'pointer' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{chosenIcon}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: '#7C3AED' }}>Crear «{createLabel}»</div>
+                <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>Elegí un icono y tocá para crear</div>
+              </div>
+              <Plus size={18} color="#7C3AED" w={2.6} />
             </div>
-            <Plus size={18} color="#7C3AED" w={2.6} />
-          </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 2px 10px', marginBottom: 6, borderBottom: '1px solid #F1F4F9' }}>
+              {CATEGORY_ICONS.map((ic) => {
+                const on = chosenIcon === ic
+                return (
+                  <button key={ic} onClick={() => actions.setNewCatIcon(ic)} style={{ width: 36, height: 36, borderRadius: 10, border: on ? '2px solid #7C3AED' : '1.5px solid #E2E8F0', background: on ? '#F1ECFD' : '#fff', fontSize: 18, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>{ic}</button>
+                )
+              })}
+            </div>
+          </>
         )}
         {list.map((ct) => (
           <div key={ct.id} onClick={() => actions.pickCat(ct.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 9px', borderRadius: 11, cursor: 'pointer' }}>
@@ -190,13 +225,30 @@ function MethodPanel({ s, dr, actions }) {
   )
 }
 
-function SplitPanel({ dr, c, me, actions }) {
-  const opts = [
-    { k: 'group', label: `Según el grupo (${c.daniPct}% ${me})` },
-    { k: 'full_mine', label: 'Lo debo todo yo' },
-    { k: 'full_theirs', label: 'Lo deben todo' },
-    { k: 'settled', label: 'Pagamos ambos (saldado)' },
-  ]
+function ParticipantsPanel({ g, dr, actions }) {
+  const excluded = dr.excluded || []
+  return (
+    <div style={{ animation: 'ccScr .22s ease' }}>
+      <PanelHeader title="Participantes" onBack={actions.backToFields} />
+      <div style={{ fontSize: 12.5, color: '#94A3B8', fontWeight: 700, lineHeight: 1.4, marginBottom: 12 }}>Quiénes participan de este gasto. Los que saques no pagan su parte y se reparte entre el resto.</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {g.members.map((m) => {
+          const on = !excluded.includes(m.id)
+          return (
+            <div key={m.id} onClick={() => actions.toggleParticipant(m.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 9px', borderRadius: 11, cursor: 'pointer' }}>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: m.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, opacity: on ? 1 : 0.4 }}>{m.initial}</div>
+              <span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: on ? '#0B1220' : '#94A3B8' }}>{m.name}</span>
+              <span style={{ width: 22, height: 22, borderRadius: 7, border: on ? 'none' : '1.5px solid #CBD5E1', background: on ? '#7C3AED' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{on && <Check size={14} color="#fff" w={3.4} />}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SplitPanel({ dr, splitLabels, actions }) {
+  const opts = ['group', 'full_mine', 'full_theirs', 'settled'].map((k) => ({ k, label: splitLabels[k] }))
   const cur = dr.mode || 'group'
   return (
     <div style={{ animation: 'ccScr .22s ease' }}>

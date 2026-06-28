@@ -7,6 +7,7 @@ const toRow = (e, gid) => ({
   currency: e.currency || 'ARS', category_id: e.categoryId || null, description: e.desc || null,
   amount: e.amount, payer_key: e.payerId || null, mode: e.mode || 'group',
   cuota: e.cuota || null, future: !!e.future, from_key: e.from || null, to_key: e.to || null,
+  excluded: e.excluded && e.excluded.length ? e.excluded : null,
   created_by: e.createdBy || null, edited_by: e.editedBy || null, edited_at: e.editedAt || null,
 })
 
@@ -22,6 +23,20 @@ export async function cloudUpsertCategory(c) {
   const { error } = await supabase.from('categories').upsert({ id: c.id, icon: c.icon, name: c.name })
   if (error) console.error('[upsertCategory]', error.message)
 }
+
+// Chat compartido: solo se sincronizan los mensajes "de historial" (user/saved).
+const toMsgRow = (m, gid) => ({
+  id: m.id, group_id: gid, role: m.role || null, kind: m.kind, text: m.text || null,
+  exp_id: m.expId || null, by_name: m.by || null, date: m.date || null, time: m.time || null,
+})
+export async function cloudUpsertMessage(m, gid) {
+  const { error } = await supabase.from('messages').upsert(toMsgRow(m, gid))
+  if (error) console.error('[upsertMessage]', error.message)
+}
+export async function cloudDeleteMessage(id) {
+  const { error } = await supabase.from('messages').delete().eq('id', id)
+  if (error) console.error('[deleteMessage]', error.message)
+}
 // Guarda el reparto vigente desde una fecha (reemplaza el de ese mismo día si ya existía).
 export async function cloudSaveSplit(gid, fromDate, shares, by, at) {
   await supabase.from('split_history').delete().eq('group_id', gid).eq('from_date', fromDate)
@@ -32,14 +47,15 @@ export async function cloudSaveSplit(gid, fromDate, shares, by, at) {
 // Lee todo lo del usuario desde Supabase y lo arma en la forma del estado `s`.
 // userId: auth.user.id del logueado (para detectar quién soy → state.me).
 export async function loadCloudState(userId) {
-  const [groupsR, membersR, catsR, splitsR, expR] = await Promise.all([
+  const [groupsR, membersR, catsR, splitsR, expR, msgR] = await Promise.all([
     supabase.from('groups').select('*'),
     supabase.from('group_members').select('*').order('id', { ascending: true }),
     supabase.from('categories').select('*'),
     supabase.from('split_history').select('*').order('from_date', { ascending: true }),
     supabase.from('expenses').select('*'),
+    supabase.from('messages').select('*'),
   ])
-  const bad = [groupsR, membersR, catsR, splitsR, expR].find((r) => r.error)
+  const bad = [groupsR, membersR, catsR, splitsR, expR, msgR].find((r) => r.error)
   if (bad) throw new Error(bad.error.message)
 
   const base = makeInitialState()
@@ -84,6 +100,7 @@ export async function loadCloudState(userId) {
     if (e.time) entry.time = e.time
     if (e.description) entry.desc = e.description
     if (e.cuota) entry.cuota = e.cuota
+    if (e.excluded) entry.excluded = e.excluded
     if (e.future) entry.future = true
     if (e.kind === 'transfer') { entry.kind = 'transfer'; entry.from = e.from_key; entry.to = e.to_key }
     if (e.created_by) entry.createdBy = e.created_by
@@ -93,10 +110,22 @@ export async function loadCloudState(userId) {
 
   const categories = catsR.data.map((c) => ({ id: c.id, icon: c.icon, name: c.name }))
 
-  // chat: local (intro por grupo)
+  // chat COMPARTIDO: intro por grupo + mensajes de historial desde la nube (user/saved), ordenados por creación.
+  const msgKey = (id) => { const x = String(id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
   const threads = {}
   for (const gid in groups) {
     threads[gid] = [{ id: 'w' + gid, role: 'app', kind: 'text', text: groups[gid].personal ? 'Anotá tus gastos personales. Ej: “3000 café”.' : 'Cargá un gasto escribiéndolo, ej: “8000 nafta pagó Juan”.' }]
+  }
+  const msgs = (msgR.data || []).slice().sort((a, b) => msgKey(a.id) - msgKey(b.id))
+  for (const r of msgs) {
+    if (!threads[r.group_id]) continue
+    const m = { id: r.id, role: r.role, kind: r.kind }
+    if (r.text != null) m.text = r.text
+    if (r.exp_id) m.expId = r.exp_id
+    if (r.by_name) m.by = r.by_name
+    if (r.date) m.date = r.date
+    if (r.time) m.time = r.time
+    threads[r.group_id].push(m)
   }
 
   return {

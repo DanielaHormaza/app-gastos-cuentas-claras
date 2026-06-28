@@ -1,5 +1,9 @@
+import { useState } from 'react'
 import { Back, Plus, Chevron, Archive, Trash } from './icons'
 import { BRAND_GRADIENT } from './initialState'
+import { ledgerMonths } from './logic'
+import { ExportBar } from './GroupViews'
+import { supabase } from '../supabase'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
 const sectionLabel = { fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', marginBottom: 6 }
@@ -8,6 +12,19 @@ const sectionLabel = { fontSize: 10.5, fontWeight: 800, color: '#94A3B8', letter
 export default function Profile({ s, actions }) {
   const prof = s.profile
   const profInitial = (prof.name.trim()[0] || 'D').toUpperCase()
+  const personalMonths = s.groups.personal ? ledgerMonths(s, 'personal', true) : []
+  // Crear / cambiar contraseña (para poder entrar con email+contraseña, ideal en iOS-PWA).
+  const [pwd, setPwd] = useState('')
+  const [pwdMsg, setPwdMsg] = useState(null) // { ok, text }
+  const [pwdSaving, setPwdSaving] = useState(false)
+  const savePwd = async () => {
+    if (pwd.length < 6) { setPwdMsg({ ok: false, text: 'Mínimo 6 caracteres.' }); return }
+    setPwdSaving(true); setPwdMsg(null)
+    const { error } = await supabase.auth.updateUser({ password: pwd })
+    setPwdSaving(false)
+    if (error) setPwdMsg({ ok: false, text: error.message })
+    else { setPwdMsg({ ok: true, text: '✓ Contraseña guardada. Ya podés entrar con email y contraseña.' }); setPwd('') }
+  }
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#FBFCFE', animation: 'ccIn .26s ease' }}>
@@ -41,6 +58,16 @@ export default function Profile({ s, actions }) {
           </div>
         </div>
 
+        <div style={sectionLabel}>CONTRASEÑA</div>
+        <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, padding: 14, marginBottom: 18, boxShadow: cardShadow }}>
+          <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600, lineHeight: 1.45, marginBottom: 10 }}>Definí una contraseña para entrar con email + contraseña (recomendado para la app instalada en el celular).</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={pwd} onChange={(e) => { setPwd(e.target.value); setPwdMsg(null) }} onKeyDown={(e) => e.key === 'Enter' && savePwd()} type="password" autoComplete="new-password" placeholder="Nueva contraseña (mín. 6)" style={{ flex: 1, border: '1.5px solid #E2E8F0', borderRadius: 11, padding: '10px 12px', outline: 'none', fontWeight: 600, fontSize: 14, color: '#0B1220', background: '#fff', fontFamily: 'inherit', minWidth: 0 }} />
+            <button onClick={savePwd} disabled={pwdSaving || pwd.length < 6} style={{ border: 'none', background: pwdSaving || pwd.length < 6 ? '#CBD5E1' : '#7C3AED', color: '#fff', borderRadius: 11, padding: '10px 14px', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, cursor: pwdSaving || pwd.length < 6 ? 'not-allowed' : 'pointer', flexShrink: 0 }}>{pwdSaving ? '…' : 'Guardar'}</button>
+          </div>
+          {pwdMsg && <div style={{ fontSize: 12, fontWeight: 700, color: pwdMsg.ok ? '#0E9F86' : '#E11D5B', marginTop: 8, lineHeight: 1.4 }}>{pwdMsg.text}</div>}
+        </div>
+
         <div style={sectionLabel}>MEDIOS DE PAGO</div>
         <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, overflow: 'hidden', marginBottom: 18, boxShadow: cardShadow }}>
           {s.methods.map((m) => (
@@ -72,6 +99,15 @@ export default function Profile({ s, actions }) {
             <div style={{ width: 42, height: 24, borderRadius: 999, background: '#7C3AED', position: 'relative' }}><div style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff' }} /></div>
           </div>
         </div>
+
+        {personalMonths.length > 0 && (
+          <>
+            <div style={sectionLabel}>EXPORTAR MIS GASTOS</div>
+            <div style={{ marginBottom: 22 }}>
+              <ExportBar s={s} gid="personal" monthKeys={personalMonths} />
+            </div>
+          </>
+        )}
 
         <div onClick={actions.signOut} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, border: '1.5px solid #FBD0DC', background: '#FDEEF0', borderRadius: 13, padding: 13, cursor: 'pointer' }}>
           <span style={{ fontWeight: 800, fontSize: 14, color: '#E11D5B' }}>Cerrar sesión</span>

@@ -1,5 +1,5 @@
 import { compute, fmt, totalsByCurrency, CURRENCIES } from './logic'
-import { Logo, Chevron, Plus, Archive } from './icons'
+import { Logo, Chevron, Plus, Archive, Eye, EyeOff } from './icons'
 
 /** Pantalla Inicio: cifra hero + "Mis gastos" + lista de grupos + archivados. */
 export default function Inicio({ s, actions }) {
@@ -42,7 +42,12 @@ export default function Inicio({ s, actions }) {
 
       {/* cifra hero (una línea por moneda; sin conversión) */}
       <div style={{ padding: '24px 26px 20px' }}>
-        <div style={{ fontSize: 13, color: '#94A3B8', fontWeight: 700 }}>{totalLabel}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontSize: 13, color: '#94A3B8', fontWeight: 700 }}>{totalLabel}</div>
+          <button onClick={actions.toggleHideAmounts} title={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} aria-label={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} style={{ border: 'none', background: 'transparent', padding: 2, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+            {s.hideAmounts ? <EyeOff size={17} color="#94A3B8" /> : <Eye size={17} color="#94A3B8" />}
+          </button>
+        </div>
         {totals.length === 0 ? (
           <div className="num" style={{ fontSize: 44, fontWeight: 700, letterSpacing: '-0.03em', color: '#0B1220', marginTop: 4 }}>$0</div>
         ) : (
