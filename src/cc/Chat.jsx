@@ -1,7 +1,7 @@
 import { useEffect, useRef, Fragment } from 'react'
 import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, personalFeed, curList, CURRENCIES, monthShortLabel, monthLongLabel, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
-import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin } from './icons'
+import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin, Search } from './icons'
 import { Futuros, Historicos } from './GroupViews'
 import CategoryFilter, { Filters, CurrencyFilter, SourceFilter } from './CategoryFilter'
 import Config from './Config'
@@ -22,6 +22,18 @@ const closeBtn = { width: 38, border: '1.5px solid #E2E8F0', background: '#fff',
 export default function Chat({ s, actions, typingName }) {
   const gid = s.groupId
   const g = s.groups[gid]
+  // Defensa: si el grupo no existe (p. ej. un id viejo, o un personal que la nube no devolvió),
+  // mostramos un estado vacío con "Volver" en vez de quedar en pantalla blanca.
+  if (!g) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: '#F4F6FA', padding: 32, textAlign: 'center' }}>
+        <div style={{ fontSize: 30 }}>🧾</div>
+        <div style={{ fontWeight: 800, fontSize: 15.5, color: '#0B1220' }}>No encontramos este espacio</div>
+        <div style={{ fontSize: 13, color: '#64748B', fontWeight: 600, maxWidth: 280 }}>Puede que se haya archivado o todavía no esté sincronizado.</div>
+        <button onClick={actions.backToList} style={{ border: 'none', background: '#7C3AED', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 13.5, padding: '10px 20px', borderRadius: 12, cursor: 'pointer' }}>Volver al inicio</button>
+      </div>
+    )
+  }
   const c = compute(s, gid)
   const readOnly = !!s.archived[gid]
   // Espacio 1:1: se muestra con el nombre de la persona (sin nombre de grupo) y el saldo/movimientos
@@ -644,7 +656,7 @@ function passPersonalFilters(s, r) {
   if (s.moveQuery && !r.title.toLowerCase().includes(s.moveQuery.toLowerCase())) return false
   return true
 }
-// Barra de filtros (origen + categoría + moneda) usada por todas las vistas de Mis gastos.
+// Barra de filtros (origen + categoría + moneda + buscador) usada por todas las vistas de Mis gastos.
 function PersonalFilterBar({ s, actions, rows }) {
   const cats = s.categories.filter((c) => rows.some((r) => r.categoryId === c.id))
   const currencies = CURRENCIES.filter((cu) => rows.some((r) => r.cur === cu))
@@ -653,6 +665,11 @@ function PersonalFilterBar({ s, actions, rows }) {
       <SourceFilter value={s.personalSrc || 'all'} options={srcOptionsFor(s)} onChange={actions.setPersonalSrc} />
       {cats.length > 0 && <CategoryFilter value={s.catFilter} cats={cats} onChange={actions.setCatFilter} />}
       {currencies.length > 1 && <CurrencyFilter value={s.curFilter} currencies={currencies} onChange={actions.setCurFilter} />}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '10px 13px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)' }}>
+        <Search />
+        <input value={s.moveQuery || ''} onChange={(e) => actions.setMoveQuery(e.target.value)} placeholder="Buscar movimiento…" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontWeight: 700, fontSize: 14, color: '#0B1220', width: '100%', fontFamily: 'inherit' }} />
+        {s.moveQuery && <span onClick={() => actions.setMoveQuery('')} style={{ fontSize: 12, fontWeight: 800, color: '#7C3AED', cursor: 'pointer' }}>Limpiar</span>}
+      </div>
     </div>
   )
 }

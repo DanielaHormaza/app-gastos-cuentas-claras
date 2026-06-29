@@ -3,6 +3,7 @@ import { Back, Plus, Chevron, Archive, Trash } from './icons'
 import { BRAND_GRADIENT } from './initialState'
 import { ledgerMonths } from './logic'
 import { ExportBar } from './GroupViews'
+import CurrencyPicker from './CurrencyPicker'
 import { supabase } from '../supabase'
 import { APP_VERSION } from '../version'
 
@@ -51,12 +52,13 @@ export default function Profile({ s, actions }) {
         </div>
 
         {prof.founderNumber && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 13, borderRadius: 16, padding: '13px 15px', marginBottom: 20, background: 'linear-gradient(135deg,#FFF7E6,#F4EEFF)', border: '1px solid #F1E4C4' }}>
-            <div style={{ fontSize: 26, lineHeight: 1 }}>🏅</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', color: '#B45309', textTransform: 'uppercase' }}>Usuario Fundador</div>
-              <div style={{ fontWeight: 800, fontSize: 18, color: '#0B1220', letterSpacing: '-0.01em', lineHeight: 1.15 }}>Usuario #{prof.founderNumber}</div>
-              {prof.memberSince && <div style={{ fontSize: 11.5, fontWeight: 600, color: '#94A3B8', marginTop: 1 }}>Con nosotros desde {mesAno(prof.memberSince)}</div>}
+          <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 13, borderRadius: 16, padding: '13px 15px', marginBottom: 20, background: 'linear-gradient(135deg,#FDEBAB 0%,#F6CD63 50%,#E7AB34 100%)', border: '1px solid #E7BC5E', boxShadow: '0 4px 14px -8px rgba(199,138,30,.7), inset 0 1px 0 rgba(255,255,255,.55)' }}>
+            <span aria-hidden="true" data-cc-shine style={{ position: 'absolute', top: 0, bottom: 0, width: '34%', background: 'linear-gradient(105deg,transparent,rgba(255,255,255,.65),transparent)', animation: 'ccShine 2.6s ease-in-out forwards' }} />
+            <div style={{ position: 'relative', fontSize: 26, lineHeight: 1 }}>🥇</div>
+            <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', color: '#8A5A12', textTransform: 'uppercase' }}>Usuario Fundador</div>
+              <div style={{ fontWeight: 800, fontSize: 18, color: '#5C3C0B', letterSpacing: '-0.01em', lineHeight: 1.15 }}>Usuario #{prof.founderNumber}</div>
+              {prof.memberSince && <div style={{ fontSize: 11.5, fontWeight: 600, color: '#9A7426', marginTop: 1 }}>Con nosotros desde {mesAno(prof.memberSince)}</div>}
             </div>
           </div>
         )}
@@ -110,6 +112,14 @@ export default function Profile({ s, actions }) {
               <Plus size={17} color="#7C3AED" /><span style={{ fontWeight: 800, fontSize: 13.5 }}>Agregar medio de pago</span>
             </div>
           )}
+        </div>
+
+        <div style={sectionLabel}>MONEDA POR DEFECTO</div>
+        <div style={{ marginBottom: 8 }}>
+          <CurrencyPicker value={prof.currency || 'ARS'} onChange={actions.setCurrency} />
+        </div>
+        <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 600, marginBottom: 22, lineHeight: 1.4 }}>
+          Es la moneda que se usa al cargar un gasto sin aclarar otra. Podés cambiarla cuando quieras; los gastos ya cargados no se modifican.
         </div>
 
         <div style={sectionLabel}>PREFERENCIAS</div>

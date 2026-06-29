@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { compute, fmt, totalsByCurrency, friendIds, computeFriend, personById, personColor, isPending, isOneToOne, personalSpent, curList, TONE, TONE_BG } from './logic'
+import { todayISO, monthKeyOf } from './dates'
 import { Logo, Chevron, Plus, Archive, EyeToggle, Pin } from './icons'
 
 /** Pantalla Inicio: cifra hero + pestañas Personas / Grupos. */
@@ -33,8 +34,8 @@ export default function Inicio({ s, actions }) {
   const totalLabel = totals.length === 0 ? 'Estás al día' : allPos ? 'En total, te deben' : allNeg ? 'En total, debés' : 'Tu saldo'
   const heroTone = totals.length === 0 ? TONE.pos : allPos ? TONE.pos : allNeg ? TONE.neg : '#94A3B8'
 
-  // "Mis gastos" = lo personal + tu parte de todos los grupos (también es plata tuya).
-  const ps = personalSpent(s)
+  // "Mis gastos" en la home = saldo del MES EN CURSO (lo personal + tu parte de todos los grupos).
+  const ps = personalSpent(s, monthKeyOf(todayISO()))
   const personalAmount = ps.length ? fmt(Math.abs(ps[0][1]), ps[0][0]) : '$0'
   const prof = s.profile
   const profInitial = (prof.name.trim()[0] || 'D').toUpperCase()
@@ -79,8 +80,10 @@ export default function Inicio({ s, actions }) {
               <span style={{ color: '#7C3AED' }}>Claras</span>
             </span>
             {prof.founderNumber && (
-              <div onClick={actions.openProfile} title="Usuario fundador" style={{ display: 'flex', width: 'fit-content', alignItems: 'center', gap: 5, marginTop: 4, padding: '3px 10px 3px 7px', borderRadius: 999, background: 'linear-gradient(135deg,#FFF7E6,#F4EEFF)', border: '1px solid #F1E4C4', fontSize: 11, fontWeight: 800, color: '#B45309', cursor: 'pointer' }}>
-                <span style={{ fontSize: 11 }}>🏅</span>Usuario fundador #{prof.founderNumber}
+              <div onClick={actions.openProfile} title="Usuario fundador" style={{ position: 'relative', overflow: 'hidden', display: 'flex', width: 'fit-content', alignItems: 'center', gap: 6, marginTop: 4, padding: '4px 13px 4px 8px', borderRadius: 999, background: 'linear-gradient(135deg,#FDEBAB 0%,#F4C75A 48%,#E3A52E 100%)', border: '1px solid #E7BC5E', boxShadow: '0 2px 7px -3px rgba(199,138,30,.6), inset 0 1px 0 rgba(255,255,255,.55)', cursor: 'pointer' }}>
+                <span aria-hidden="true" data-cc-shine style={{ position: 'absolute', top: 0, bottom: 0, width: '38%', background: 'linear-gradient(105deg,transparent,rgba(255,255,255,.7),transparent)', animation: 'ccShine 2.4s ease-in-out forwards' }} />
+                <span style={{ position: 'relative', fontSize: 12 }}>🥇</span>
+                <span style={{ position: 'relative', fontSize: 11, fontWeight: 800, color: '#7A4710', letterSpacing: '-0.01em' }}>Usuario fundador #{prof.founderNumber}</span>
               </div>
             )}
           </div>
@@ -122,7 +125,7 @@ export default function Inicio({ s, actions }) {
           <div style={{ width: 48, height: 48, borderRadius: 14, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 21, flexShrink: 0, boxShadow: '0 2px 8px -4px rgba(15,23,42,.3)' }}>🧾</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 15.5, color: '#0B1220' }}>Mis gastos</div>
-            <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600 }}>Tuyos + tu parte en grupos</div>
+            <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600 }}>Este mes · tuyos + tu parte en grupos</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div className="num" style={{ fontWeight: 700, fontSize: 16, color: '#0B1220' }}>{personalAmount}</div>

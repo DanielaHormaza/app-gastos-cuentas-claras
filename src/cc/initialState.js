@@ -71,7 +71,7 @@ export function makeInitialState() {
     newProfMethodName: '',
 
     // ---- datos ----
-    profile: { name: 'Dani', email: 'dani@cuentasclaras.app', gradient: 'linear-gradient(135deg,#7C3AED,#3B82F6)', founderNumber: 1, memberSince: '2026-06-01' },
+    profile: { name: 'Dani', email: 'dani@cuentasclaras.app', gradient: 'linear-gradient(135deg,#7C3AED,#3B82F6)', founderNumber: 1, memberSince: '2026-06-01', currency: 'ARS' },
     methods: [
       { id: 'efectivo', name: 'Efectivo', icon: '💵' },
       { id: 'visa_macro', name: 'Visa Macro (débito)', icon: '💳' },
@@ -108,6 +108,7 @@ export function makeInitialState() {
       { id: 'otro', icon: '🏷️', name: 'Otro' },
       { id: 'inicial', icon: '⚖️', name: 'Saldo inicial' },
       { id: 'transfer', icon: '🔁', name: 'Pagos y transferencias' },
+      { id: 'sincat', icon: '🏷️', name: 'Sin categoría' },
     ],
     groups: {
       pareja: {

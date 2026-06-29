@@ -4,4 +4,4 @@ dist
 *.local
 .env
 .claude
-design_handoff_cuentas_claras
+design_handoff_*

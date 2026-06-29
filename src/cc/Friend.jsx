@@ -166,7 +166,7 @@ export function AddFriend({ s, actions }) {
   const af = s.addFriend || {}
   const input = { width: '100%', boxSizing: 'border-box', background: '#F4F6FA', border: 'none', outline: 'none', borderRadius: 12, padding: '12px 14px', fontSize: 14, color: '#0B1220', fontWeight: 600, fontFamily: 'inherit' }
   return (
-    <div onClick={actions.closeNewFriend} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(15,23,42,.35)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'ccFade .15s ease' }}>
+    <div onClick={actions.closeNewFriend} style={{ position: 'fixed', top: 'var(--app-top, 0px)', left: 0, right: 0, height: 'var(--app-h, 100dvh)', zIndex: 40, background: 'rgba(15,23,42,.35)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'ccFade .15s ease' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: '#fff', borderRadius: '22px 22px 0 0', padding: '20px 20px 28px', animation: 'ccScr .26s cubic-bezier(.22,1,.36,1)' }}>
         <div style={{ width: 38, height: 4, borderRadius: 999, background: '#E2E8F0', margin: '0 auto 16px' }} />
         <div style={{ fontWeight: 800, fontSize: 17, color: '#0B1220' }}>Agregar persona</div>

@@ -13,8 +13,8 @@ import { MethodDetail, MonthDetail } from './cc/Detail'
 import { Logo } from './cc/icons'
 import Login from './Login'
 import { supabase } from './supabase'
-import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases } from './cloud'
-import { setAmountsHidden } from './cc/logic'
+import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency } from './cloud'
+import { setAmountsHidden, CURRENCIES } from './cc/logic'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
 const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null), JSON.stringify(e.excluded || [])].join('|')
@@ -166,6 +166,11 @@ function load() {
 function migrate(s) {
   s.splitLog = s.splitLog || {}
   s.splitMeta = s.splitMeta || {}
+  // "Sin categoría": bucket único para gastos no reconocidos. Debe existir siempre, incluso
+  // sobre estados viejos en localStorage que se guardaron antes de incorporarlo.
+  if (Array.isArray(s.categories) && !s.categories.some((c) => c.id === 'sincat')) {
+    s.categories = [...s.categories, { id: 'sincat', icon: '🏷️', name: 'Sin categoría' }]
+  }
   // pinned: de formato viejo (array de gids) al nuevo ({ kind, id })
   s.pinned = (s.pinned || []).map((p) => (typeof p === 'string' ? { kind: 'group', id: p } : p)).filter((p) => p && p.id)
   Object.keys(s.splits || {}).forEach((gid) => {
@@ -190,6 +195,7 @@ export default function App() {
   const catSyncRef = useRef(null) // ids de categorías ya sincronizadas
   const msgSyncRef = useRef(null) // snapshot de mensajes ya sincronizados
   const aliasSyncRef = useRef(false) // ya se tomó el snapshot inicial de aliases
+  const curSyncRef = useRef(false) // ya se tomó el snapshot inicial de la moneda por defecto
   const typingChanRef = useRef(null) // canal de "escribiendo…" (broadcast) del grupo activo
   const typingTimerRef = useRef(null) // limpia el cartel de "escribiendo…" tras unos segundos
   const lastTypingSentRef = useRef(0) // throttle de envío de "escribiendo…"
@@ -235,16 +241,33 @@ export default function App() {
     return () => { cancelled = true }
   }, [session?.user?.id])
 
-  // espejo de movimientos → Supabase: detecta altas/ediciones/bajas y las sincroniza
+  // espejo de movimientos → Supabase: detecta altas/ediciones/bajas y las sincroniza.
+  // El personal usa la clave cliente 'personal' pero en la nube tiene un id propio por-usuario
+  // (cloudId): traducimos al escribir. Si todavía no se creó (cloudId null), se saltea hasta que exista.
   useEffect(() => {
     if (!dataReady) { ledSyncRef.current = null; return }
+    const personalCloudId = s.groups.personal && s.groups.personal.cloudId
+    const realGid = (gid) => (gid === 'personal' ? personalCloudId : gid)
     const cur = ledSnapshot(s.ledgers)
     const prev = ledSyncRef.current
     if (prev === null) { ledSyncRef.current = cur; return } // primera vez tras cargar: solo snapshot
-    for (const id in cur) if (!prev[id] || prev[id].fp !== cur[id].fp) cloudUpsertExpense(cur[id].e, cur[id].gid)
+    for (const id in cur) if (!prev[id] || prev[id].fp !== cur[id].fp) { const rg = realGid(cur[id].gid); if (rg) cloudUpsertExpense(cur[id].e, rg) }
     for (const id in prev) if (!cur[id]) cloudDeleteExpense(id)
     ledSyncRef.current = cur
-  }, [s.ledgers, dataReady])
+  }, [s.ledgers, dataReady, s.groups.personal && s.groups.personal.cloudId])
+
+  // Asegura el grupo personal del usuario en la nube: si la carga no encontró uno propio
+  // (1er login → cloudId null), lo crea con id único 'personal_<uid>' vía create_group y guarda
+  // el cloudId, así los gastos personales empiezan a persistir/sincronizar.
+  useEffect(() => {
+    if (!dataReady || !session?.user) return
+    const p = s.groups.personal
+    if (!p || p.cloudId) return
+    const cid = 'personal_' + session.user.id
+    const mem = p.members[0] || { id: s.me, name: s.profile.name, short: s.profile.name, color: '#7C3AED', initial: (s.profile.name.trim()[0] || '?').toUpperCase() }
+    cloudCreateGroup({ id: cid, name: 'Mis gastos', initial: '🧾', gradient: 'linear-gradient(135deg,#7C3AED,#3B82F6)', personal: true }, [mem], mem.id)
+    setS((prev) => ({ ...prev, groups: { ...prev.groups, personal: { ...prev.groups.personal, cloudId: cid } } }))
+  }, [dataReady, session?.user?.id, s.groups.personal && s.groups.personal.cloudId])
 
   // espejo de grupos/miembros → Supabase: crea grupos nuevos (create_group), actualiza datos y suma miembros.
   // 'personal' no se sincroniza acá (ya existe en la nube y es del usuario).
@@ -298,6 +321,24 @@ export default function App() {
     if (!aliasSyncRef.current) { aliasSyncRef.current = true; return } // primera vez tras cargar: solo snapshot
     cloudSaveAliases(session.user.id, s.aliases)
   }, [s.aliases, dataReady])
+
+  // espejo de la moneda por defecto → perfil en Supabase (te sigue entre dispositivos).
+  useEffect(() => {
+    if (!dataReady || !session?.user) { curSyncRef.current = false; return }
+    if (!curSyncRef.current) { curSyncRef.current = true; return } // primera vez tras cargar: solo snapshot
+    cloudSaveCurrency(session.user.id, s.profile.currency)
+  }, [s.profile.currency, dataReady])
+
+  // Moneda elegida al crear la cuenta (Login la deja en localStorage porque al hacer signup
+  // todavía no hay datos cargados): se aplica una vez al perfil y el espejo de arriba la persiste.
+  useEffect(() => {
+    if (!dataReady || !session?.user) return
+    const pending = typeof localStorage !== 'undefined' && localStorage.getItem('cc-signup-currency')
+    if (pending && CURRENCIES.includes(pending)) {
+      localStorage.removeItem('cc-signup-currency')
+      if (pending !== s.profile.currency) setS((prev) => ({ ...prev, profile: { ...prev.profile, currency: pending } }))
+    }
+  }, [dataReady, session?.user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // TIEMPO REAL: si otro dispositivo/usuario cambia algo, recargamos los datos (sin perder navegación ni chat).
   useEffect(() => {
@@ -578,7 +619,7 @@ export default function App() {
           if (res.kind === 'interpret') {
             // Auto-guardado: se anota el gasto directo (sin preguntar ni confirmar); la tarjeta queda con "Editar".
             const exp = res.exp
-            const dup = ledger.find((e) => e.kind !== 'transfer' && e.amount === exp.amount && e.payerId === exp.payerId && e.categoryId === exp.categoryId)
+            const dup = ledger.find((e) => e.kind !== 'transfer' && e.amount === exp.amount && e.payerId === exp.payerId && e.categoryId === exp.categoryId && (e.desc || '') === (exp.desc || ''))
             if (dup) {
               app = { id: 'a' + id, role: 'app', kind: 'duplicate', exp }
             } else {
@@ -589,7 +630,7 @@ export default function App() {
                 if (sids.length >= 2) splits = { ...splits, [g]: { [sids[0]]: exp.split.a, [sids[1]]: exp.split.b } }
               }
               const expId = 'e' + id
-              const entry = { id: expId, date: exp.date || day, categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: tm, mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
+              const entry = { id: expId, date: exp.date || day, categoryId: catId, amount: exp.amount, payerId: exp.payerId, desc: exp.desc, time: tm, mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
               ledger = [...ledger, entry]
               app = { id: 'a' + id, role: 'app', kind: 'saved', expId, exp: { ...exp, categoryId: catId } }
             }
@@ -612,7 +653,7 @@ export default function App() {
         if (!msg) return {}
         const exp = msg.exp
         const ledger = prev.ledgers[g] || []
-        const dup = ledger.find((e) => e.amount === exp.amount && e.payerId === exp.payerId && e.categoryId === exp.categoryId)
+        const dup = ledger.find((e) => e.amount === exp.amount && e.payerId === exp.payerId && e.categoryId === exp.categoryId && (e.desc || '') === (exp.desc || ''))
         if (dup && !msg._forced) return { threads: { ...prev.threads, [g]: thread.map((m) => (m.id === id ? { ...m, kind: 'duplicate' } : m)) } }
         let cats = prev.categories
         let catId = exp.categoryId
@@ -621,7 +662,7 @@ export default function App() {
           cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
         }
         const expId = 'e' + Date.now()
-        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
+        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, desc: exp.desc, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
         let splits = prev.splits
         if (exp.split) {
           const ids = Object.keys(prev.splits[g] || {})
@@ -660,7 +701,7 @@ export default function App() {
           cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
         }
         const expId = 'e' + Date.now()
-        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
+        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, desc: exp.desc, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
         let splits = prev.splits
         if (exp.split) {
           const ids = Object.keys(prev.splits[g] || {})
@@ -679,7 +720,7 @@ export default function App() {
     editDup: (id) => {
       const msg = (s.threads[gid] || []).find((m) => m.id === id)
       const ex = msg && msg.exp
-      const e = (s.ledgers[gid] || []).find((x) => x.amount === ex.amount && x.payerId === ex.payerId && x.categoryId === ex.categoryId)
+      const e = (s.ledgers[gid] || []).find((x) => x.amount === ex.amount && x.payerId === ex.payerId && x.categoryId === ex.categoryId && (x.desc || '') === (ex.desc || ''))
       actions.cancelMsg(id)
       if (e) openEdit(e)
     },
@@ -814,6 +855,8 @@ export default function App() {
 
     // ---- perfil ----
     onProfName: (v) => set((prev) => ({ profile: { ...prev.profile, name: v } })),
+    setCurrency: (cur) => set((prev) => ({ profile: { ...prev.profile, currency: cur }, currencyOpen: false })),
+    toggleCurrencyMenu: () => set((prev) => ({ currencyOpen: !prev.currencyOpen })),
     onChangeProfilePhoto: () =>
       set((prev) => {
         const i = (GRADIENTS.indexOf(prev.profile.gradient) + 1) % GRADIENTS.length

@@ -75,6 +75,12 @@ export async function cloudSaveAliases(userId, aliases) {
   if (error) console.error('[saveAliases]', error.message)
 }
 
+// Guarda la moneda por defecto del usuario en su perfil (sigue al usuario entre dispositivos).
+export async function cloudSaveCurrency(userId, currency) {
+  const { error } = await supabase.from('profiles').update({ currency: currency || 'ARS' }).eq('id', userId)
+  if (error) console.error('[saveCurrency]', error.message)
+}
+
 // Lee todo lo del usuario desde Supabase y lo arma en la forma del estado `s`.
 // userId: auth.user.id del logueado (para detectar quién soy → state.me).
 export async function loadCloudState(userId) {
@@ -85,7 +91,7 @@ export async function loadCloudState(userId) {
     supabase.from('split_history').select('*').order('from_date', { ascending: true }),
     supabase.from('expenses').select('*'),
     supabase.from('messages').select('*'),
-    supabase.from('profiles').select('founder_number, created_at, aliases').eq('id', userId).maybeSingle(),
+    supabase.from('profiles').select('founder_number, created_at, aliases, currency').eq('id', userId).maybeSingle(),
   ])
   const bad = [groupsR, membersR, catsR, splitsR, expR, msgR].find((r) => r.error)
   if (bad) throw new Error(bad.error.message)
@@ -115,10 +121,30 @@ export async function loadCloudState(userId) {
     if (mm) meName = mm.short
   }
 
+  // "Mis gastos" (grupo personal) es PRIVADO de cada usuario: por RLS, uno NO ve el personal de
+  // otro. En la nube cada usuario tiene su propio grupo personal con id único (ej. Dani='personal',
+  // Juan='personal_<uid>'). Lo remapeamos a la clave cliente fija 'personal' (todo el código usa
+  // ese literal) y recordamos su id real en `cloudId` para enrutar las escrituras.
+  const rawPersonalId = Object.keys(groups).find((id) => groups[id].personal)
+  if (rawPersonalId && rawPersonalId !== 'personal') {
+    groups.personal = { ...groups[rawPersonalId], id: 'personal', cloudId: rawPersonalId }
+    delete groups[rawPersonalId]
+  } else if (rawPersonalId === 'personal') {
+    groups.personal.cloudId = 'personal'
+  }
+  // Traduce el id de la nube → clave cliente (solo afecta al personal).
+  const gidOf = (raw) => (rawPersonalId && raw === rawPersonalId ? 'personal' : raw)
+  // Si el usuario todavía no tiene personal en la nube (1er login), lo sintetizamos local con
+  // cloudId=null; App lo crea en la nube (create_group) la primera vez que carga.
+  if (!groups.personal) {
+    const init = (meName.trim()[0] || '?').toUpperCase()
+    groups.personal = { id: 'personal', name: 'Mis gastos', initial: '🧾', personal: true, gradient: 'linear-gradient(135deg,#7C3AED,#3B82F6)', cloudId: null, members: [{ id: me, name: meName, short: meName, color: '#7C3AED', initial: init }] }
+  }
+
   // reparto: la última fila por fecha = actual; las previas = historial (until = inicio de la siguiente)
   const splits = {}, splitLog = {}, splitMeta = {}
   const byG = {}
-  for (const r of splitsR.data) (byG[r.group_id] = byG[r.group_id] || []).push(r)
+  for (const r of splitsR.data) (byG[gidOf(r.group_id)] = byG[gidOf(r.group_id)] || []).push(r)
   for (const gid in byG) {
     const regs = byG[gid]
     const latest = regs[regs.length - 1]
@@ -131,7 +157,8 @@ export async function loadCloudState(userId) {
   const ledgers = {}
   for (const gid in groups) ledgers[gid] = []
   for (const e of expR.data) {
-    if (!ledgers[e.group_id]) ledgers[e.group_id] = []
+    const lg = gidOf(e.group_id)
+    if (!ledgers[lg]) ledgers[lg] = []
     const entry = { id: e.id, date: e.date, currency: e.currency || 'ARS', categoryId: e.category_id, amount: Number(e.amount), payerId: e.payer_key, mode: e.mode || 'group' }
     if (e.time) entry.time = e.time
     if (e.description) entry.desc = e.description
@@ -141,10 +168,12 @@ export async function loadCloudState(userId) {
     if (e.kind === 'transfer') { entry.kind = 'transfer'; entry.from = e.from_key; entry.to = e.to_key }
     if (e.created_by) entry.createdBy = e.created_by
     if (e.edited_by) { entry.editedBy = e.edited_by; entry.editedAt = e.edited_at }
-    ledgers[e.group_id].push(entry)
+    ledgers[lg].push(entry)
   }
 
   const categories = catsR.data.map((c) => ({ id: c.id, icon: c.icon, name: c.name }))
+  // Bucket "Sin categoría": debe existir siempre (los gastos no reconocidos caen acá).
+  if (!categories.some((c) => c.id === 'sincat')) categories.push({ id: 'sincat', icon: '🏷️', name: 'Sin categoría' })
 
   // chat COMPARTIDO: intro por grupo + mensajes de historial desde la nube (user/saved), ordenados por creación.
   const msgKey = (id) => { const x = String(id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
@@ -168,7 +197,7 @@ export async function loadCloudState(userId) {
   return {
     ...base,
     me,
-    profile: { ...base.profile, name: meName, founderNumber: profR.data?.founder_number || null, memberSince: profR.data?.created_at || null },
+    profile: { ...base.profile, name: meName, founderNumber: profR.data?.founder_number || null, memberSince: profR.data?.created_at || null, currency: profR.data?.currency || 'ARS' },
     aliases: profR.data?.aliases || {},
     groups,
     splits,

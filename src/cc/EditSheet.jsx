@@ -1,6 +1,7 @@
-import { catById, memberById, guessIcon, CATEGORY_ICONS } from './logic'
+import { catById, memberById, guessIcon, CATEGORY_ICONS, CURRENCY_INFO } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, Close, ChevronDown, Check, Search, Trash, Plus, SplitIcon } from './icons'
+import CurrencyPicker from './CurrencyPicker'
 
 const fieldBox = { display: 'flex', alignItems: 'center', gap: 9, border: '1.5px solid #E2E8F0', borderRadius: 13, cursor: 'pointer' }
 const label = { fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.04em', marginBottom: 7 }
@@ -67,16 +68,11 @@ function Fields({ s, g, dr, actions, splitLabels }) {
 
       <div style={label}>MONTO</div>
       <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '6px 14px', marginBottom: 12 }}>
-        <span className="num" style={{ fontSize: 24, fontWeight: 700, color: '#94A3B8' }}>{dr.currency === 'USD' ? 'US$' : dr.currency === 'CLP' ? 'CLP$' : '$'}</span>
+        <span className="num" style={{ fontSize: 24, fontWeight: 700, color: '#94A3B8' }}>{(CURRENCY_INFO[dr.currency] || { prefix: '$' }).prefix}</span>
         <input value={dr.amount} onChange={(e) => actions.onAmount(e.target.value)} inputMode="numeric" className="num" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 26, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.01em', marginLeft: 4, width: '100%', background: 'transparent' }} />
       </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-        {['ARS', 'USD', 'CLP'].map((cu) => {
-          const on = (dr.currency || 'ARS') === cu
-          return (
-            <button key={cu} onClick={() => actions.pickCurrency(cu)} style={{ flex: 1, border: on ? '1.5px solid #7C3AED' : '1.5px solid #E2E8F0', background: on ? '#F1ECFD' : '#fff', color: on ? '#7C3AED' : '#64748B', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, padding: '8px', borderRadius: 11, cursor: 'pointer' }}>{cu}</button>
-          )
-        })}
+      <div style={{ marginBottom: 18 }}>
+        <CurrencyPicker value={dr.currency || 'ARS'} onChange={actions.pickCurrency} compact />
       </div>
 
       {g.personal ? (

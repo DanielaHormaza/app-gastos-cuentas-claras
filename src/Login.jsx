@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from './supabase'
 import { Logo } from './cc/icons'
+import { CURRENCY_INFO, CURRENCIES } from './cc/logic'
 
 const BRAND = 'linear-gradient(135deg,#2ECCB1,#3B82F6,#7C3AED)'
 const inputStyle = { width: '100%', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '12px 14px', outline: 'none', fontSize: 15, fontWeight: 600, color: '#0B1220', background: '#fff', fontFamily: 'inherit', boxSizing: 'border-box' }
@@ -14,6 +15,7 @@ export default function Login() {
   const [pass, setPass] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  const [cur, setCur] = useState('ARS') // moneda por defecto elegida al crear la cuenta
   const mail = email.trim()
   const reset = (m) => { setMode(m); setErr('') }
 
@@ -32,6 +34,8 @@ export default function Login() {
     if (!mail || loading) return
     if (pass.length < 6) { setErr('La contraseña tiene que tener al menos 6 caracteres.'); return }
     setLoading(true); setErr('')
+    // Guardamos la moneda elegida; App la aplica al perfil cuando carga los datos (al loguear todavía no existen).
+    try { localStorage.setItem('cc-signup-currency', cur) } catch (e) { /* ignore */ }
     const { data, error } = await supabase.auth.signUp({ email: mail, password: pass })
     setLoading(false)
     if (error) { setErr(error.message); return }
@@ -72,7 +76,19 @@ export default function Login() {
             <div style={labelStyle}>CONTRASEÑA</div>
             <input value={pass} onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (mode === 'signup' ? signup() : signin())} type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} placeholder={mode === 'signup' ? 'Elegí una contraseña (mín. 6)' : 'Tu contraseña'} style={inputStyle} />
 
-            {err && <div style={{ fontSize: 12, fontWeight: 700, color: '#E11D5B', marginTop: 8, lineHeight: 1.4 }}>{err}</div>}
+            {mode === 'signup' && (
+              <>
+                <div style={{ ...labelStyle, marginTop: 12 }}>MONEDA POR DEFECTO</div>
+                <select value={cur} onChange={(e) => setCur(e.target.value)} style={{ ...inputStyle, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
+                  {CURRENCIES.map((code) => (
+                    <option key={code} value={code}>{code} · {CURRENCY_INFO[code].name} ({CURRENCY_INFO[code].prefix})</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 600, marginTop: 6, lineHeight: 1.4 }}>Podés cambiarla después desde tu perfil.</div>
+              </>
+            )}
+
+            {err &&<div style={{ fontSize: 12, fontWeight: 700, color: '#E11D5B', marginTop: 8, lineHeight: 1.4 }}>{err}</div>}
 
             <button onClick={mode === 'signup' ? signup : signin} disabled={loading || !mail || !pass}
               style={{ width: '100%', marginTop: 16, border: 'none', background: loading || !mail || !pass ? '#CBD5E1' : BRAND, color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 15, padding: 14, borderRadius: 13, cursor: loading || !mail || !pass ? 'not-allowed' : 'pointer', boxShadow: loading || !mail || !pass ? 'none' : '0 10px 24px -10px rgba(59,130,246,.6)' }}>

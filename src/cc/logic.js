@@ -5,14 +5,27 @@
 import { fmtDateFull, monthKeyOf, todayISO, parseSpanishDate, NOMBRES_MES } from './dates'
 
 // Orden de monedas para mostrar (sin conversión, cada una por separado).
-export const CURRENCIES = ['ARS', 'USD', 'CLP']
+// Monedas soportadas (SIN conversión: cada una se computa y muestra por separado).
+// prefix = símbolo en el formato · dec = decimales · name = etiqueta para los selectores.
+export const CURRENCY_INFO = {
+  ARS: { prefix: '$', dec: 0, name: 'Peso argentino' },
+  USD: { prefix: 'US$', dec: 2, name: 'Dólar' },
+  EUR: { prefix: '€', dec: 2, name: 'Euro' },
+  CLP: { prefix: 'CLP$', dec: 0, name: 'Peso chileno' },
+  BRL: { prefix: 'R$', dec: 2, name: 'Real brasileño' },
+  UYU: { prefix: '$U', dec: 2, name: 'Peso uruguayo' },
+  MXN: { prefix: 'MX$', dec: 2, name: 'Peso mexicano' },
+  COP: { prefix: 'COP$', dec: 0, name: 'Peso colombiano' },
+  PEN: { prefix: 'S/', dec: 2, name: 'Sol peruano' },
+  GBP: { prefix: '£', dec: 2, name: 'Libra esterlina' },
+}
+export const CURRENCIES = Object.keys(CURRENCY_INFO)
 
 // Colores de "estado de balance" (el monto va en neutro; el color es solo del indicador).
 // pos = te deben (verde suave) · neg = debés (slate calmo gris azulado, NO rojo: transmite calma) · even = a mano/neutro.
 export const TONE = { pos: '#0E9F86', neg: '#7B8CB8', even: '#94A3B8' }
 // Fondos tenues para las pills de saldo (te debe / le debés / a mano).
 export const TONE_BG = { pos: '#E6F6F1', neg: '#EEF1F7', even: '#F1F4F9' }
-const CUR_PREFIX = { ARS: '$', USD: 'US$', CLP: 'CLP$' }
 
 // Paleta estable para derivar un color de persona cuando el miembro no trae color propio.
 const PERSON_PALETTE = ['#7C3AED', '#3B82F6', '#2ECCB1', '#F59E0B', '#EC4899', '#10B981', '#F43F5E', '#0EA5E9']
@@ -22,13 +35,14 @@ const PERSON_PALETTE = ['#7C3AED', '#3B82F6', '#2ECCB1', '#F59E0B', '#EC4899', '
 let _hideAmounts = false
 export function setAmountsHidden(v) { _hideAmounts = !!v }
 
-// Formato de monto por moneda: "$4.500" / "US$188,60" / "CLP$20.429".
+// Formato de monto por moneda: "$4.500" / "US$188,60" / "CLP$20.429" / "€12,50".
 export function fmt(n, cur = 'ARS') {
-  const pre = CUR_PREFIX[cur] || '$'
+  const info = CURRENCY_INFO[cur] || { prefix: '$', dec: 0 }
+  const pre = info.prefix
   if (_hideAmounts) return pre + ' ••••'
   const neg = n < 0 ? '-' : ''
-  // USD conserva hasta 2 decimales; ARS/CLP redondean a entero.
-  const r = cur === 'USD' ? Math.round(Math.abs(n) * 100) / 100 : Math.round(Math.abs(n))
+  // Monedas con decimales (USD, EUR…) conservan 2; el resto redondean a entero.
+  const r = info.dec === 2 ? Math.round(Math.abs(n) * 100) / 100 : Math.round(Math.abs(n))
   const [ip, dp] = r.toString().split('.')
   const milesEntero = ip.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
   const decimales = dp ? ',' + dp.padEnd(2, '0') : ''
@@ -298,15 +312,17 @@ export function friendsTotalByCurrency(state, pids) {
 
 // "Mis gastos" REAL: lo personal + tu parte (consumo) de TODOS los grupos, por moneda.
 // Porque tu parte de un gasto compartido también es plata que gastaste vos.
-export function personalSpent(state) {
+// monthKey opcional ('YYYY-MM'): si se pasa, limita a ese mes (la home muestra el mes en curso).
+export function personalSpent(state, monthKey = null) {
   const t = {}
   const add = (cur, v) => { t[cur] = (t[cur] || 0) + v }
-  ;(state.ledgers.personal || []).forEach((e) => { if (e.future || e.kind === 'transfer') return; add(e.currency || 'ARS', e.amount) })
+  const inMonth = (e) => !monthKey || monthKeyOf(e.date) === monthKey
+  ;(state.ledgers.personal || []).forEach((e) => { if (e.future || e.kind === 'transfer' || !inMonth(e)) return; add(e.currency || 'ARS', e.amount) })
   for (const gid in state.groups) {
     const g = state.groups[gid]
     if (g.personal) continue
     ;(state.ledgers[gid] || []).forEach((e) => {
-      if (e.future || e.kind === 'transfer') return
+      if (e.future || e.kind === 'transfer' || !inMonth(e)) return
       const share = myShare(state, gid, e)
       if (share === null || share <= 0) return
       add(e.currency || 'ARS', e.amount * share)
@@ -519,6 +535,9 @@ const STOP = new Set([
   'todo', 'toda', 'mama', 'mamá', 'papa', 'papá', 'ambos',
   // monedas y fechas (no son categorías)
   'usd', 'u$s', 'dolar', 'dólar', 'dolares', 'dólares', 'clp', 'pesos', 'chilenos', 'dia', 'día',
+  'eur', 'euro', 'euros', 'brl', 'real', 'reales', 'reais', 'uyu', 'uruguayo', 'uruguayos', 'mxn',
+  'mexicano', 'mexicanos', 'cop', 'colombiano', 'colombianos', 'pen', 'sol', 'soles', 'peruano',
+  'gbp', 'libra', 'libras',
   'anteayer', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
   'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre',
 ])
@@ -529,13 +548,24 @@ function extractCat(state, gid, t) {
   return words[0] || 'Gasto'
 }
 
+// Categoría "Sin categoría": bucket único para gastos no reconocidos. NO inventamos una
+// categoría por cada palabra ("lomo", "stacy"…). El texto del gasto se guarda como `desc`
+// (etiqueta del movimiento) y queda para categorizar después.
+export const UNCAT_ID = 'sincat'
+export function uncatCategory(state) {
+  return (state.categories || []).find((c) => c.id === UNCAT_ID) || { id: UNCAT_ID, name: 'Sin categoría', icon: '🏷️' }
+}
+
 export function resolveCat(state, gid, t) {
   for (const c of state.categories) {
+    if (c.id === UNCAT_ID) continue // no auto-asignar el bucket por su nombre
     if ((' ' + t + ' ').includes(c.name.toLowerCase())) return { id: c.id, name: c.name, icon: c.icon }
   }
+  // Sin coincidencia → "Sin categoría", conservando el texto como descripción del movimiento.
   const label = extractCat(state, gid, t)
-  const name = label.charAt(0).toUpperCase() + label.slice(1)
-  return { id: null, name, icon: guessIcon(label) }
+  const desc = label.charAt(0).toUpperCase() + label.slice(1)
+  const uc = uncatCategory(state)
+  return { id: uc.id, name: uc.name, icon: uc.icon, desc }
 }
 
 const MES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
@@ -869,10 +899,17 @@ export function parseChat(state, gid, text) {
   const anchor = (members[0] || {}).id // 'mine' histórico (para mapear full_mine/full_theirs)
   const t = ' ' + text.toLowerCase() + ' '
   if (/borr[aá]|elimin[aá]/.test(t) && /[uú]ltimo/.test(t)) return { kind: 'correction', cor: { type: 'del' } }
-  // moneda (default ARS, sin conversión) — se detecta primero porque define el umbral del monto
-  let currency = 'ARS'
+  // moneda (default = la del perfil, sin conversión) — se detecta primero porque define el umbral del monto
+  let currency = (state.profile && state.profile.currency) || 'ARS'
   if (/\b(usd|u\$s|d[oó]lar|d[oó]lares)\b/.test(t)) currency = 'USD'
   else if (/\b(clp|peso chileno|pesos chilenos)\b/.test(t)) currency = 'CLP'
+  else if (/\b(eur|euro|euros)\b/.test(t) || t.includes('€')) currency = 'EUR'
+  else if (/\b(brl|real|reales|reais)\b/.test(t)) currency = 'BRL'
+  else if (/\b(uyu|peso uruguayo|pesos uruguayos)\b/.test(t)) currency = 'UYU'
+  else if (/\b(mxn|peso mexicano|pesos mexicanos)\b/.test(t)) currency = 'MXN'
+  else if (/\b(cop|peso colombiano|pesos colombianos)\b/.test(t)) currency = 'COP'
+  else if (/\b(pen|sol|soles)\b/.test(t)) currency = 'PEN'
+  else if (/\b(gbp|libra|libras)\b/.test(t)) currency = 'GBP'
   // fecha en lenguaje natural ("31 de mayo", "ayer", "hoy"); null = hoy al confirmar
   const date = parseSpanishDate(text)
   const sm = t.match(/(\d{1,2})\s*[/]\s*(\d{1,2})/)
@@ -931,6 +968,6 @@ export function parseChat(state, gid, text) {
   const mode = forcedMode || 'group'
   // si no se detectó pagador, asumo que pagué yo (no preguntamos: se anota y se puede editar)
   const finalPayer = (forcedMode ? forcedPayer : payerId) || me
-  const exp = { amount, categoryId: cat.id, catName: cat.name, catIcon: cat.icon, payerId: finalPayer, cuotas, split, mode, currency, date }
+  const exp = { amount, categoryId: cat.id, catName: cat.name, catIcon: cat.icon, desc: cat.desc, payerId: finalPayer, cuotas, split, mode, currency, date }
   return { kind: 'interpret', exp }
 }

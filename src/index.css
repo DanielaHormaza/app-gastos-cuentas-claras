@@ -57,3 +57,6 @@ body {
 @keyframes ccUp { from { transform: translateY(102%); } to { transform: translateY(0); } }
 @keyframes ccFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes ccScr { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+/* Brillo "oro pulido" de la insignia Usuario fundador (recorre la píldora/tarjeta). */
+@keyframes ccShine { 0% { transform: translateX(-130%); } 55%, 100% { transform: translateX(160%); } }
+@media (prefers-reduced-motion: reduce) { [data-cc-shine] { display: none !important; } }
