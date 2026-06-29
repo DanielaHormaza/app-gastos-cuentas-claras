@@ -235,7 +235,8 @@ export default function App() {
     const apply = (sess) => {
       setSession(sess)
       setS((prev) => ({ ...prev, authEmail: sess?.user?.email || null }))
-      if (sess?.user) {
+      // En modo demo NO tocamos Supabase aunque exista una sesión real (datos 100% locales/ficticios).
+      if (sess?.user && !isDemo()) {
         // crear/actualizar perfil (no bloqueante; el claim va en el efecto de carga, secuenciado)
         supabase.from('profiles').upsert({ id: sess.user.id, name: (sess.user.email || '').split('@')[0] }).then(({ error }) => error && console.error('[profile]', error.message))
       }
@@ -246,7 +247,10 @@ export default function App() {
   }, [])
 
   // cargar los datos desde la nube cuando hay sesión (primero claim → recién ahí soy miembro y RLS me deja leer)
+  // En modo demo se saltea SIEMPRE (aunque haya sesión real): la demo usa datos locales y dataReady queda false,
+  // así ningún espejo escribe en Supabase ni se pisan los datos ficticios con los reales.
   useEffect(() => {
+    if (isDemo()) { setDataReady(false); return }
     if (!session?.user) { setDataReady(false); return }
     let cancelled = false
     setDataErr(null)
