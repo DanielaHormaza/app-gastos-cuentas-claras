@@ -95,9 +95,9 @@ export default function Login() {
 
             {mode === 'signup' && demoSignup && (
               <div style={{ marginTop: 12, background: '#F8F5FF', border: '1px solid #E4D8FB', borderRadius: 13, padding: '11px 13px' }}>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#7C3AED', marginBottom: 3 }}>✨ Te generamos un acceso de prueba</div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#7C3AED', marginBottom: 3 }}>✨ Acceso de prueba</div>
                 <div style={{ fontSize: 11.5, color: '#7A6BA8', fontWeight: 600, lineHeight: 1.45 }}>
-                  Contraseña: <b style={{ color: '#5B21B6' }}>{pass}</b>. Podés crear la cuenta así, o poner <b>tu propio email</b> para conservar los datos y recuperar el acceso.
+                  Te cargamos un email y una contraseña ficticios para que pruebes el alta. Contraseña: <b style={{ color: '#5B21B6' }}>{pass}</b>
                 </div>
               </div>
             )}
