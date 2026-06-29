@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 import { Logo } from './cc/icons'
 import { CURRENCY_INFO, CURRENCIES } from './cc/logic'
+
+// Prefill ficticio que deja el botón "Crear cuenta" de la demo (email + contraseña de prueba).
+const readPrefill = () => { try { return JSON.parse(localStorage.getItem('cc-signup-prefill') || 'null') } catch { return null } }
 
 const BRAND = 'linear-gradient(135deg,#2ECCB1,#3B82F6,#7C3AED)'
 const inputStyle = { width: '100%', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '12px 14px', outline: 'none', fontSize: 15, fontWeight: 600, color: '#0B1220', background: '#fff', fontFamily: 'inherit', boxSizing: 'border-box' }
@@ -10,14 +13,19 @@ const labelStyle = { fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpac
 /** Login híbrido: email + contraseña (ideal para PWA en iOS, sin salir de la app)
  *  con magic link por email como respaldo / primera vez. */
 export default function Login() {
-  const [mode, setMode] = useState('signin') // signin | signup | sent
-  const [email, setEmail] = useState('')
-  const [pass, setPass] = useState('')
+  const prefill = readPrefill()
+  const [mode, setMode] = useState(prefill ? 'signup' : 'signin') // signin | signup | sent
+  const [email, setEmail] = useState(prefill?.email || '')
+  const [pass, setPass] = useState(prefill?.pass || '')
+  const [demoSignup, setDemoSignup] = useState(!!prefill) // venimos de "Crear cuenta" de la demo
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const [cur, setCur] = useState('ARS') // moneda por defecto elegida al crear la cuenta
   const mail = email.trim()
   const reset = (m) => { setMode(m); setErr('') }
+
+  // El prefill se consume una sola vez (no debe reaparecer si recargás el login).
+  useEffect(() => { if (prefill) { try { localStorage.removeItem('cc-signup-prefill') } catch (e) { /* sin storage */ } } }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Explorar demo: activa el modo demo (datos ficticios locales) y recarga. No usa Supabase ni cuenta.
   const enterDemo = () => {
@@ -84,6 +92,15 @@ export default function Login() {
 
             <div style={labelStyle}>CONTRASEÑA</div>
             <input value={pass} onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (mode === 'signup' ? signup() : signin())} type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} placeholder={mode === 'signup' ? 'Elegí una contraseña (mín. 6)' : 'Tu contraseña'} style={inputStyle} />
+
+            {mode === 'signup' && demoSignup && (
+              <div style={{ marginTop: 12, background: '#F8F5FF', border: '1px solid #E4D8FB', borderRadius: 13, padding: '11px 13px' }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#7C3AED', marginBottom: 3 }}>✨ Te generamos un acceso de prueba</div>
+                <div style={{ fontSize: 11.5, color: '#7A6BA8', fontWeight: 600, lineHeight: 1.45 }}>
+                  Contraseña: <b style={{ color: '#5B21B6' }}>{pass}</b>. Podés crear la cuenta así, o poner <b>tu propio email</b> para conservar los datos y recuperar el acceso.
+                </div>
+              </div>
+            )}
 
             {mode === 'signup' && (
               <>

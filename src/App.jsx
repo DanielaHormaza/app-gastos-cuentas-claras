@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
 import { makeDemoState } from './cc/seedDemo'
+import Welcome from './cc/Welcome'
 import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith } from './cc/logic'
 import { todayISO, nowTime, fmtDateFull } from './cc/dates'
 import Inicio from './cc/Inicio'
@@ -139,6 +140,7 @@ function useDesktop() {
 const KEY = 'cuentas-claras:v4'
 const DEMO_KEY = 'cuentas-claras:demo-v1' // datos ficticios del modo demo (aparte de los reales)
 const DEMO_FLAG = 'cc-demo' // '1' = el visitante entró por "Explorar demo"
+const WELCOME_KEY = 'cc-welcomed:v1' // '1' = ya vio el onboarding de bienvenida (por dispositivo)
 const HIDE_KEY = 'cuentas-claras:hideAmounts' // preferencia por dispositivo (no se sincroniza)
 const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'pinned', 'aliases', 'histSel']
 
@@ -227,6 +229,7 @@ export default function App() {
   const typingTimerRef = useRef(null) // limpia el cartel de "escribiendo…" tras unos segundos
   const lastTypingSentRef = useRef(0) // throttle de envío de "escribiendo…"
   const [typingName, setTypingName] = useState(null) // quién está escribiendo en el grupo activo (otro usuario)
+  const [showWelcome, setShowWelcome] = useState(false) // onboarding de bienvenida (primer ingreso de cuenta nueva)
 
   useEffect(() => {
     const apply = (sess) => {
@@ -321,6 +324,21 @@ export default function App() {
     }
     grpSyncRef.current = cur
   }, [s.groups, dataReady])
+
+  // Onboarding de bienvenida: se muestra una vez (por dispositivo) en el primer ingreso de una cuenta
+  // nueva/vacía. A cuentas con datos se les marca "visto" en silencio. ?welcome=1 lo fuerza (para previsualizar).
+  useEffect(() => {
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('welcome') === '1') { setShowWelcome(true); return }
+    if (!dataReady || isDemo()) return
+    let welcomed = false
+    try { welcomed = localStorage.getItem(WELCOME_KEY) === '1' } catch { /* sin storage */ }
+    if (welcomed) return
+    const nonPersonal = Object.keys(s.groups).filter((id) => id !== 'personal' && !s.groups[id].personal)
+    const empty = nonPersonal.length === 0 && (s.ledgers.personal || []).length === 0
+    if (empty) setShowWelcome(true)
+    else { try { localStorage.setItem(WELCOME_KEY, '1') } catch { /* sin storage */ } }
+  }, [dataReady]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dismissWelcome = () => { try { localStorage.setItem(WELCOME_KEY, '1') } catch { /* sin storage */ } setShowWelcome(false) }
 
   // espejo de archivados → Supabase (columna groups.archived). Gated por dataReady → la demo no escribe.
   // Detecta cambios de archivar/desarchivar y los persiste; así sobrevive a recargas y sincroniza dispositivos.
@@ -964,6 +982,16 @@ export default function App() {
     exitDemo: () => { try { localStorage.removeItem(DEMO_FLAG); localStorage.removeItem(DEMO_KEY) } catch { /* sin storage */ } window.location.reload() },
     // Restaurar: borra el estado demo modificado y recarga (vuelve a sembrar el seed ficticio limpio).
     restoreDemo: () => { try { localStorage.removeItem(DEMO_KEY) } catch { /* sin storage */ } window.location.reload() },
+    // Crear cuenta desde la demo: genera credenciales ficticias, sale de la demo y abre el signup precargado.
+    demoSignup: () => {
+      const rnd = Math.random().toString(36).slice(2, 7)
+      const prefill = { email: 'explorador' + rnd + '@cuentasclaras.app', pass: 'demo' + Math.random().toString(36).slice(2, 7) }
+      try {
+        localStorage.setItem('cc-signup-prefill', JSON.stringify(prefill))
+        localStorage.removeItem(DEMO_FLAG); localStorage.removeItem(DEMO_KEY)
+      } catch { /* sin storage */ }
+      window.location.assign(window.location.pathname) // recarga al login sin ?demo en la URL
+    },
 
     // ---- nuevo grupo ----
     onNewGroupField: (field, v) => set((prev) => ({ newGroup: { ...prev.newGroup, [field]: v } })),
@@ -1087,6 +1115,7 @@ export default function App() {
         {s.confirmUnpin && <UnpinConfirm s={s} actions={actions} />}
         {s.confirmDeleteGroup && <DeleteGroupConfirm s={s} actions={actions} />}
         {demoActive && <DemoBanner actions={actions} />}
+        {showWelcome && <Welcome onDone={dismissWelcome} />}
       </div>
     )
   }
@@ -1099,6 +1128,7 @@ export default function App() {
         {s.confirmUnpin && <UnpinConfirm s={s} actions={actions} />}
         {s.confirmDeleteGroup && <DeleteGroupConfirm s={s} actions={actions} />}
         {demoActive && <DemoBanner actions={actions} />}
+        {showWelcome && <Welcome onDone={dismissWelcome} />}
       </div>
     </div>
   )
@@ -1146,15 +1176,16 @@ function DeleteGroupConfirm({ s, actions }) {
   )
 }
 
-/** Banner flotante del modo demo: avisa que son datos ficticios y deja restaurar / salir. */
+/** Banner flotante del modo demo: avisa que son datos ficticios y ofrece crear cuenta / restaurar / salir. */
 function DemoBanner({ actions }) {
-  const btn = { border: 'none', fontFamily: 'inherit', fontWeight: 800, fontSize: 11.5, padding: '6px 10px', borderRadius: 999, cursor: 'pointer' }
+  const btn = { border: 'none', fontFamily: 'inherit', fontWeight: 800, fontSize: 11.5, padding: '7px 11px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap' }
   return (
-    <div style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)', zIndex: 60, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(11,18,32,.92)', color: '#fff', padding: '8px 8px 8px 14px', borderRadius: 999, boxShadow: '0 14px 34px -12px rgba(15,23,42,.6)', backdropFilter: 'blur(6px)', maxWidth: 'calc(100vw - 24px)' }}>
+    <div style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)', zIndex: 60, display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(11,18,32,.92)', color: '#fff', padding: '7px 7px 7px 13px', borderRadius: 999, boxShadow: '0 14px 34px -12px rgba(15,23,42,.6)', backdropFilter: 'blur(6px)', maxWidth: 'calc(100vw - 20px)' }}>
       <span style={{ fontSize: 13 }}>🧪</span>
-      <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>Versión demo · datos ficticios</span>
-      <button onClick={actions.restoreDemo} title="Restaurar los datos demo originales" style={{ ...btn, background: 'rgba(255,255,255,.15)', color: '#fff' }}>↺ Restaurar</button>
-      <button onClick={actions.exitDemo} style={{ ...btn, background: '#fff', color: '#0B1220' }}>Salir</button>
+      <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>Demo · datos ficticios</span>
+      <button onClick={actions.restoreDemo} title="Restaurar los datos demo originales" aria-label="Restaurar" style={{ ...btn, background: 'rgba(255,255,255,.14)', color: '#fff', padding: '7px 9px' }}>↺</button>
+      <button onClick={actions.exitDemo} style={{ ...btn, background: 'rgba(255,255,255,.14)', color: '#fff' }}>Salir</button>
+      <button onClick={actions.demoSignup} style={{ ...btn, background: '#fff', color: '#0B1220' }}>Crear cuenta</button>
     </div>
   )
 }

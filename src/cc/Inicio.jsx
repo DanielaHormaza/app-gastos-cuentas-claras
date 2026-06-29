@@ -15,6 +15,8 @@ export default function Inicio({ s, actions }) {
   // Fijados en el inicio (personas y grupos válidos).
   const friendIdList = friendIds(s)
   const validPins = (s.pinned || []).filter((p) => (p.kind === 'group' ? s.groups[p.id] && !s.archived[p.id] : friendIdList.includes(p.id)))
+  // Cuenta nueva: todavía no agregó a nadie ni creó grupos → mostramos la guía de primeros pasos.
+  const isNewAccount = friendIdList.length === 0 && groupIds.length === 0 && archivedIds.length === 0 && archivedFriendIds.length === 0
   // Long-press en el inicio para fijar/desfijar sin entrar.
   const lpRef = useRef({})
   const longPress = (kind, id) => {
@@ -135,6 +137,34 @@ export default function Inicio({ s, actions }) {
           </div>
         </div>
       </div>
+
+      {/* Primeros pasos: guía para una cuenta nueva (sin amigos ni grupos todavía) */}
+      {isNewAccount && (
+        <div style={{ padding: '0 16px 12px', flexShrink: 0 }}>
+          <div style={{ borderRadius: 18, border: '1.5px dashed #DCE2EA', background: '#fff', padding: '15px 15px 13px' }}>
+            <div style={{ fontWeight: 800, fontSize: 15.5, color: '#0B1220', marginBottom: 3 }}>👋 Empezá en segundos</div>
+            <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600, lineHeight: 1.45, marginBottom: 12 }}>
+              Cargá los gastos escribiéndolos como hablás. Ej: <b style={{ color: '#0B1220' }}>“8000 nafta pagó Juan”</b>.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                { emoji: '🧾', label: 'Cargá un gasto tuyo', sub: 'En “Mis gastos”', onClick: actions.openPersonal },
+                { emoji: '👤', label: 'Agregá una persona', sub: 'Se crea un 1:1 al instante', onClick: actions.openNewFriend },
+                { emoji: '👥', label: 'Creá un grupo', sub: 'Para un viaje, el depto…', onClick: actions.openNewGroup },
+              ].map((a) => (
+                <div key={a.label} onClick={a.onClick} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#F8FAFC', border: '1px solid #EEF1F6', borderRadius: 13, padding: '10px 12px', cursor: 'pointer' }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0, boxShadow: '0 1px 0 #EEF1F6' }}>{a.emoji}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 13.5, color: '#0B1220' }}>{a.label}</div>
+                    <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600 }}>{a.sub}</div>
+                  </div>
+                  <Chevron />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* fijados: franja de acceso rápido (personas y grupos), uno debajo del otro, arriba del selector */}
       {validPins.length > 0 && (
