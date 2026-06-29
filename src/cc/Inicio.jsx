@@ -79,7 +79,7 @@ export default function Inicio({ s, actions }) {
               <span style={{ color: '#7C3AED' }}>Claras</span>
             </span>
             {prof.founderNumber && (
-              <div onClick={actions.openProfile} title="Usuario Fundador" style={{ display: 'flex', width: 'fit-content', alignItems: 'center', gap: 4, marginTop: 4, padding: '2px 9px 2px 6px', borderRadius: 999, background: 'linear-gradient(135deg,rgba(46,204,177,.16),rgba(124,58,237,.16))', border: '1px solid rgba(14,159,134,.25)', fontSize: 10.5, fontWeight: 800, color: '#0E9F86', cursor: 'pointer' }}>
+              <div onClick={actions.openProfile} title="Usuario Fundador" style={{ display: 'flex', width: 'fit-content', alignItems: 'center', gap: 4, marginTop: 4, padding: '2px 9px 2px 6px', borderRadius: 999, background: '#FCE5C7', border: '1px solid #F0CE8E', fontSize: 10.5, fontWeight: 800, color: '#92500E', cursor: 'pointer' }}>
                 <span style={{ fontSize: 11 }}>🏅</span>Usuario Fundador #{prof.founderNumber}
               </div>
             )}

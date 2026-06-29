@@ -337,6 +337,35 @@ export function myShareExpenses(state) {
   return out
 }
 
+// Feed unificado de "Mis gastos": filas de gastos personales (monto completo) + tu parte de cada grupo
+// (etiquetada por origen). future=false → pasados; future=true → futuros (cuotas/fijos por venir).
+// spent = lo que gastaste vos (personal: total; grupo: tu parte). amount = monto total del gasto.
+export function personalFeed(state, future = false) {
+  const me = state.me || 'dani'
+  const rows = []
+  ;(state.ledgers.personal || []).forEach((e) => {
+    if (!!e.future !== future || e.kind === 'transfer') return
+    const cat = catById(state, e.categoryId)
+    rows.push({ id: e.id, gid: 'personal', own: true, gname: 'Personal', categoryId: e.categoryId, cur: e.currency || 'ARS', spent: e.amount, amount: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, payerId: me, cuota: e.cuota || null })
+  })
+  for (const gid in state.groups) {
+    const g = state.groups[gid]
+    if (g.personal) continue
+    const gname = isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
+    ;(state.ledgers[gid] || []).forEach((e) => {
+      if (!!e.future !== future || e.kind === 'transfer') return
+      const share = myShare(state, gid, e)
+      if (share === null) return
+      const mine = e.amount * share
+      if (mine < 1) return
+      const cat = catById(state, e.categoryId)
+      const payer = memberById(state, gid, e.payerId)
+      rows.push({ id: e.id, gid, own: false, gname, categoryId: e.categoryId, cur: e.currency || 'ARS', spent: mine, amount: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, payerId: e.payerId, payerShort: payer.short, cuota: e.cuota || null })
+    })
+  }
+  return rows
+}
+
 // ¿El grupo es un espacio "uno a uno"? Un 1:1 es el espacio directo con una persona:
 // marcado `direct`, o un grupo de 2 que NO fue creado como grupo con nombre (g.isGroup).
 // Los grupos con nombre (g.isGroup), aunque sean de 2 personas (ej: "Viaje a Chile"), son grupos.

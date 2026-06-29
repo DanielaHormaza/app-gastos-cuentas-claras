@@ -1,5 +1,5 @@
 import { useEffect, useRef, Fragment } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, curList, CURRENCIES, TONE } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, personalFeed, curList, CURRENCIES, monthShortLabel, monthLongLabel, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin } from './icons'
 import { Futuros, Historicos } from './GroupViews'
@@ -7,7 +7,7 @@ import CategoryFilter, { Filters, CurrencyFilter, SourceFilter } from './Categor
 import Config from './Config'
 import SettleSheet from './SettleSheet'
 import Revision from './Revision'
-import { dayLabel, fmtDateFull, fmtDateDow, todayISO } from './dates'
+import { dayLabel, fmtDateFull, fmtDateDow, todayISO, monthKeyOf } from './dates'
 
 // Nombre de cada vista (para el menú y la leyenda del header).
 const VIEW_TITLES = { chat: 'Chat', ledger: 'Movimientos diarios', months: 'Gastos futuros', hist: 'Gastos históricos', review: 'Revisión de datos' }
@@ -82,8 +82,8 @@ export default function Chat({ s, actions, typingName }) {
             ? <PersonalLedger s={s} actions={actions} />
             : <LedgerView s={s} g={g} c={c} bannerLabel={'Saldo en el grupo'} lines={lines} actions={actions} />
       )}
-      {s.view === 'months' && <Futuros s={s} actions={actions} />}
-      {s.view === 'hist' && <Historicos s={s} actions={actions} />}
+      {s.view === 'months' && (g.personal ? <PersonalFuturos s={s} actions={actions} /> : <Futuros s={s} actions={actions} />)}
+      {s.view === 'hist' && (g.personal ? <PersonalHistoricos s={s} actions={actions} /> : <Historicos s={s} actions={actions} />)}
       {s.view === 'review' && <Revision s={s} actions={actions} />}
 
       {s.configOpen && <Config s={s} actions={actions} />}
@@ -623,54 +623,73 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
   )
 }
 
-/** "Mis gastos" en detalle: tus gastos personales + tu parte de cada grupo (etiquetada),
- * con filtros (categoría, moneda, búsqueda) y filtro de ORIGEN (todo / personales / un grupo).
- * Los personales se editan; los de grupo saltan a su grupo. */
-function PersonalLedger({ s, actions }) {
-  const me = s.me || 'dani'
-  const all = []
-  ;(s.ledgers.personal || []).forEach((e) => {
-    if (e.future || e.kind === 'transfer') return
-    const cat = catById(s, e.categoryId)
-    all.push({ id: e.id, gid: 'personal', own: true, categoryId: e.categoryId, cur: e.currency || 'ARS', spent: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, sub: 'Personal', amountText: fmt(e.amount, e.currency || 'ARS'), impText: '', impColor: '#94A3B8', entry: e })
-  })
-  myShareExpenses(s).forEach((e) => {
-    all.push({ id: e.id, gid: e.gid, own: false, gname: e.gname, categoryId: e.categoryId, cur: e.cur, spent: -e.delta, date: e.date, catIcon: e.catIcon, title: e.catName, sub: e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''), amountText: fmt(e.amount, e.cur), impText: '−' + fmt(-e.delta, e.cur), impColor: TONE.neg })
-  })
-
-  // filtro de origen: Todo / Solo personales / cada persona (1:1) o grupo, con ícono diferencial
-  const srcOptions = [{ value: 'all', label: 'Todo', kind: 'all' }, { value: 'personal', label: 'Solo personales', kind: 'personal' }]
+// === Helpers compartidos de "Mis gastos" (personal + tu parte de grupos) ===
+// Opciones del filtro de origen: Todo / Solo personales / cada persona (1:1) o grupo, con ícono diferencial.
+function srcOptionsFor(s) {
+  const opts = [{ value: 'all', label: 'Todo', kind: 'all' }, { value: 'personal', label: 'Solo personales', kind: 'personal' }]
   for (const gid in s.groups) {
     if (gid === 'personal') continue
     const g = s.groups[gid]
-    if (isOneToOne(s, gid)) {
-      const peer = peerOf(s, gid) || {}
-      srcOptions.push({ value: gid, label: peer.short || g.name, kind: 'person', color: peer.id ? personColor(s, peer.id) : g.gradient, initial: peer.initial || g.initial })
-    } else {
-      srcOptions.push({ value: gid, label: g.name, kind: 'group', gradient: g.gradient, initial: g.initial })
-    }
+    if (isOneToOne(s, gid)) { const peer = peerOf(s, gid) || {}; opts.push({ value: gid, label: peer.short || g.name, kind: 'person', color: peer.id ? personColor(s, peer.id) : g.gradient, initial: peer.initial || g.initial }) }
+    else opts.push({ value: gid, label: g.name, kind: 'group', gradient: g.gradient, initial: g.initial })
   }
+  return opts
+}
+// ¿la fila pasa los filtros activos? (origen + categoría + moneda + búsqueda)
+function passPersonalFilters(s, r) {
   const src = s.personalSrc || 'all'
-  const cats = s.categories.filter((c) => all.some((r) => r.categoryId === c.id))
-  const currencies = CURRENCIES.filter((cu) => all.some((r) => r.cur === cu))
+  if (!(src === 'all' || (src === 'personal' ? r.own : r.gid === src))) return false
+  if (!catMatch(s.catFilter, { categoryId: r.categoryId })) return false
+  if (!curMatch(s.curFilter, { currency: r.cur })) return false
+  if (s.moveQuery && !r.title.toLowerCase().includes(s.moveQuery.toLowerCase())) return false
+  return true
+}
+// Barra de filtros (origen + categoría + moneda) usada por todas las vistas de Mis gastos.
+function PersonalFilterBar({ s, actions, rows }) {
+  const cats = s.categories.filter((c) => rows.some((r) => r.categoryId === c.id))
+  const currencies = CURRENCIES.filter((cu) => rows.some((r) => r.cur === cu))
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+      <SourceFilter value={s.personalSrc || 'all'} options={srcOptionsFor(s)} onChange={actions.setPersonalSrc} />
+      {cats.length > 0 && <CategoryFilter value={s.catFilter} cats={cats} onChange={actions.setCatFilter} />}
+      {currencies.length > 1 && <CurrencyFilter value={s.curFilter} currencies={currencies} onChange={actions.setCurFilter} />}
+    </div>
+  )
+}
+// Fila de movimiento de Mis gastos (personal o tu parte de un grupo, con chip de origen).
+function MgRow({ s, r, actions }) {
+  const me = s.me || 'dani'
+  const sub = r.own ? 'Personal' : r.payerId === me ? 'Pagaste vos' : 'Pagó ' + (r.payerShort || '')
+  const onRow = () => { if (r.own) { const e = (s.ledgers.personal || []).find((x) => x.id === r.id); if (e) actions.openEdit(e) } else actions.openLedgerOf(r.gid) }
+  return (
+    <div onClick={onRow} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>
+      <div style={{ width: 40, height: 40, borderRadius: 12, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{r.catIcon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{r.title}</div>
+        <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+          {!r.own && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{r.gname}</span>}{sub}
+        </div>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{fmt(r.amount, r.cur)}</div>
+        {!r.own && <div style={{ fontSize: 11, fontWeight: 800, color: TONE.neg }}>−{fmt(r.spent, r.cur)}</div>}
+      </div>
+    </div>
+  )
+}
 
-  const rows = all
-    .filter((r) => (src === 'all' ? true : src === 'personal' ? r.own : r.gid === src))
-    .filter((r) => catMatch(s.catFilter, { categoryId: r.categoryId }))
-    .filter((r) => curMatch(s.curFilter, { currency: r.cur }))
-    .filter((r) => !s.moveQuery || r.title.toLowerCase().includes(s.moveQuery.toLowerCase()))
-    .sort(byRecency)
-
+/** "Mis gastos" · Movimientos: personales + tu parte de cada grupo, con filtros y filtro de origen. */
+function PersonalLedger({ s, actions }) {
+  const rows = personalFeed(s, false).filter((r) => passPersonalFilters(s, r)).sort(byRecency)
   const totals = {}
   rows.forEach((r) => { totals[r.cur] = (totals[r.cur] || 0) + r.spent })
   const tl = curList(totals)
   const lines = tl.length ? tl.map(([cur, v]) => ({ pre: '', amount: fmt(v, cur), post: '', color: '#0B1220' })) : [{ pre: '', amount: fmt(0), post: '', color: '#0B1220' }]
-
   const order = []
   const byDay = {}
   rows.forEach((r) => { const k = fmtDateFull(r.date); if (!byDay[k]) { byDay[k] = []; order.push(k) } byDay[k].push(r) })
-  const onRow = (r) => { if (r.own) actions.openEdit(r.entry); else actions.openLedgerOf(r.gid) }
-  const bannerLabel = src === 'personal' ? 'Gastado · solo personales' : src !== 'all' ? 'Gastado en ' + (srcOptions.find((o) => o.value === src) || {}).label : 'Gastado · vos + tu parte'
+  const src = s.personalSrc || 'all'
+  const bannerLabel = src === 'personal' ? 'Gastado · solo personales' : src !== 'all' ? 'Gastado en ' + (srcOptionsFor(s).find((o) => o.value === src) || {}).label : 'Gastado · vos + tu parte'
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
       <div style={{ margin: '14px 16px 6px', borderRadius: 16, padding: '13px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -683,32 +702,126 @@ function PersonalLedger({ s, actions }) {
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-          <SourceFilter value={src} options={srcOptions} onChange={actions.setPersonalSrc} />
-          {cats.length > 0 && <CategoryFilter value={s.catFilter} cats={cats} onChange={actions.setCatFilter} />}
-          {currencies.length > 1 && <CurrencyFilter value={s.curFilter} currencies={currencies} onChange={actions.setCurFilter} />}
-        </div>
+        <PersonalFilterBar s={s} actions={actions} rows={personalFeed(s, false)} />
         {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '16px 0' }}>Sin movimientos que coincidan.</div>}
         {order.map((k) => (
           <div key={k} style={{ display: 'contents' }}>
             <div style={{ padding: '8px 4px 2px' }}><span style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em' }}>{k.toUpperCase()}</span></div>
-            {byDay[k].map((it) => (
-              <div key={it.gid + it.id} onClick={() => onRow(it)} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{it.catIcon}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{it.title}</div>
-                  <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                    {!it.own && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{it.gname}</span>}{it.sub}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{it.amountText}</div>
-                  {it.impText && <div style={{ fontSize: 11, fontWeight: 800, color: it.impColor }}>{it.impText}</div>}
-                </div>
-              </div>
-            ))}
+            {byDay[k].map((r) => <MgRow key={r.gid + r.id} s={s} r={r} actions={actions} />)}
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+/** "Mis gastos" · Gastos futuros: tu parte de cuotas/fijos por venir (personal + grupos), por mes. */
+function PersonalFuturos({ s, actions }) {
+  const allRows = personalFeed(s, true)
+  const rows = allRows.filter((r) => passPersonalFilters(s, r))
+  const totals = {}
+  rows.forEach((r) => { totals[r.cur] = (totals[r.cur] || 0) + r.spent })
+  const tl = curList(totals)
+  const byKey = {}
+  const order = []
+  rows.slice().sort((a, b) => (a.date < b.date ? -1 : 1)).forEach((r) => { const k = monthKeyOf(r.date); if (!byKey[k]) { byKey[k] = []; order.push(k) } byKey[k].push(r) })
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {allRows.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '36px 16px', color: '#B6BFCC' }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>🗓️</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#64748B', marginBottom: 4 }}>Sin gastos futuros</div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.45 }}>Acá vas a ver cuotas o gastos fijos por venir, tuyos y tu parte de los grupos.</div>
+          </div>
+        ) : (<>
+          <PersonalFilterBar s={s} actions={actions} rows={allRows} />
+          <div style={{ borderRadius: 18, padding: '14px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.13),rgba(124,58,237,.13))' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', letterSpacing: '0.05em', marginBottom: 8 }}>COMPROMETIDO · TU PARTE · PRÓXIMOS MESES</div>
+            <BalanceLines lines={tl.length ? tl.map(([cur, v]) => ({ pre: '', amount: fmt(v, cur), post: '', color: '#0B1220' })) : [{ pre: '', amount: fmt(0), post: '', color: '#0B1220' }]} size={20} />
+          </div>
+          {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '10px 0' }}>Sin gastos futuros que coincidan.</div>}
+          {order.map((k, idx) => {
+            const items = byKey[k]
+            const mt = {}
+            items.forEach((r) => { mt[r.cur] = (mt[r.cur] || 0) + r.spent })
+            const expanded = !!s.expandedMonths[idx]
+            return (
+              <div key={k} style={{ background: '#fff', borderRadius: 18, padding: 14, boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', border: '1px solid #EEF1F6' }}>
+                <div onClick={() => actions.toggleMonth(idx)} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                  <span style={{ flexShrink: 0, transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .2s ease', display: 'inline-flex' }}><ChevronDown size={16} color="#94A3B8" w={2.8} /></span>
+                  <div style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: 15, color: '#0B1220' }}>{monthLongLabel(k)}</div>
+                  <div style={{ textAlign: 'right' }}>{curList(mt).map(([cur, v]) => <div key={cur} className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220', lineHeight: 1.2 }}>{fmt(v, cur)}</div>)}</div>
+                </div>
+                {expanded && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 13, paddingTop: 13, borderTop: '1px solid #F1F4F9' }}>
+                    {items.map((r) => (
+                      <div key={r.gid + r.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 30, height: 30, borderRadius: 9, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>{r.catIcon}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{r.title}</div>
+                          <div style={{ fontSize: 10.5, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                            {!r.own && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 6px', borderRadius: 999, fontSize: 9.5 }}>{r.gname}</span>}{r.cuota ? 'Cuota ' + r.cuota.n + '/' + r.cuota.total : 'Gasto fijo'}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div className="num" style={{ fontWeight: 700, fontSize: 14, color: '#0B1220' }}>{fmt(r.amount, r.cur)}</div>
+                          {!r.own && <div style={{ fontSize: 10.5, fontWeight: 800, color: TONE.neg }}>tu parte {fmt(r.spent, r.cur)}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </>)}
+      </div>
+    </div>
+  )
+}
+
+/** "Mis gastos" · Históricos: gráfico mensual de tu gasto (personal + tu parte de grupos) + mes elegido. */
+function PersonalHistoricos({ s, actions }) {
+  const allRows = personalFeed(s, false)
+  const rows = allRows.filter((r) => passPersonalFilters(s, r))
+  const chartCur = s.curFilter !== 'all' ? s.curFilter : 'ARS'
+  const cur = monthKeyOf(todayISO())
+  const [y, mo] = cur.split('-').map(Number)
+  const keys = []
+  for (let i = 5; i >= 0; i--) { const d = new Date(y, mo - 1 - i, 1); keys.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')) }
+  const months = keys.map((k) => ({ key: k, label: monthShortLabel(k), total: rows.filter((r) => monthKeyOf(r.date) === k && r.cur === chartCur).reduce((a, r) => a + r.spent, 0), current: k === cur }))
+  const histMax = Math.max(1, ...months.map((m) => m.total))
+  const selKey = s.histSel.personal || cur
+  const sel = months.find((m) => m.key === selKey) || months[months.length - 1]
+  const selRows = rows.filter((r) => monthKeyOf(r.date) === sel.key).sort(byRecency)
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <PersonalFilterBar s={s} actions={actions} rows={allRows} />
+        <div style={{ background: '#fff', borderRadius: 18, padding: '15px 16px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 13 }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>Tu gasto por mes</div>
+              <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginTop: 1 }}>{monthLongLabel(sel.key)} · en {chartCur}</div>
+            </div>
+            <div className="num" style={{ fontWeight: 700, fontSize: 22, letterSpacing: '-0.02em', color: '#0B1220' }}>{fmt(sel.total, chartCur)}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100 }}>
+            {months.map((m) => {
+              const isSel = m.key === sel.key
+              return (
+                <div key={m.key} onClick={() => actions.setHistSel('personal', m.key)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: 'pointer', height: '100%', justifyContent: 'flex-end' }}>
+                  <div style={{ width: '100%', borderRadius: '7px 7px 4px 4px', background: isSel ? 'linear-gradient(180deg,#7C3AED,#3B82F6)' : m.current ? '#D9C9FB' : '#E7EAF1', height: Math.max(6, Math.round((m.total / histMax) * 80)), minHeight: 6, transition: 'height .25s ease' }} />
+                  <div style={{ fontSize: 10, fontWeight: 800, color: isSel ? '#7C3AED' : '#94A3B8' }}>{m.label}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '4px 4px 0' }}>MOVIMIENTOS DE {monthShortLabel(sel.key).toUpperCase()}</div>
+        {selRows.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '10px 0' }}>Sin movimientos ese mes.</div>}
+        {selRows.map((r) => <MgRow key={r.gid + r.id} s={s} r={r} actions={actions} />)}
       </div>
     </div>
   )

@@ -38,7 +38,6 @@ export default function Config({ s, actions }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <input value={alias} onChange={(e) => actions.setAlias(rawPeer.id, e.target.value)} placeholder={rawPeer.short} style={{ border: 'none', outline: 'none', fontWeight: 800, fontSize: 16, color: '#0B1220', width: '100%', background: 'transparent', fontFamily: 'inherit' }} />
               <div style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600, marginTop: 2 }}>{peer.pending ? 'Invitación pendiente' : 'Amigos desde ' + (g.createdAt || '—')}</div>
-              <div style={{ fontSize: 10.5, color: '#B6BFCC', fontWeight: 600, marginTop: 2 }}>Cómo lo ves vos · su nombre real es “{rawPeer.short}”</div>
             </div>
           </div>
         ) : (
