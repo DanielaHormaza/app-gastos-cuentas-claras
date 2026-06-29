@@ -58,6 +58,7 @@ export function makeInitialState() {
     curFilter: 'all', // filtro por moneda ('all' = todas | 'ARS' | 'USD' | 'CLP')
     payerFilter: 'all', // filtro por quién pagó ('all' = todos | id de miembro)
     moveQuery: '', // búsqueda por nombre de movimiento
+    personalSrc: 'all', // filtro de origen en "Mis gastos": all | personal | <gid>
     hideAmounts: false, // "ocultar saldos": enmascara los montos (preferencia por dispositivo)
     newGroup: { name: '', desc: '', date: '', members: [], memberName: '', invited: false },
     // config de grupo
@@ -81,6 +82,7 @@ export function makeInitialState() {
     ],
     archived: {},
     pinned: [], // hasta 2 grupos fijados en el inicio (gids)
+    aliases: {}, // cómo VOS llamás a cada persona (member_key → alias), por dispositivo
     payments: { pareja: [], asado: [], personal: [] },
     threads: {
       pareja: [

@@ -52,6 +52,11 @@ begin
 end $$;
 grant execute on function create_group(jsonb, jsonb, text) to authenticated;
 
+-- ---------- Alias por usuario (cómo VOS llamás a cada persona) ----------
+-- Se guarda en el perfil del que mira (privado, no cambia el nombre real de nadie).
+-- RLS "own profile" ya existente permite leer/escribir solo el propio.
+alter table profiles add column if not exists aliases jsonb default '{}'::jsonb;
+
 -- ---------- Realtime para grupos y miembros ----------
 -- Para que al crear un grupo / sumar a alguien, el otro dispositivo lo vea en vivo.
 -- (Si ya estaban en la publicación, estos ALTER dan un error inofensivo: ignoralo.)

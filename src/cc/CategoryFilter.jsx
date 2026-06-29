@@ -110,6 +110,53 @@ function PayerFilter({ value = 'all', payers, onChange }) {
   )
 }
 
+/** Ícono diferencial de un origen: personal 🧾 · todo 📂 · 1:1 avatar redondo · grupo cuadrado con gradiente. */
+function srcIcon(o, size = 24) {
+  if (o.kind === 'person') return <span style={{ width: size, height: size, borderRadius: '50%', background: o.color || '#94A3B8', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.46, fontWeight: 800, flexShrink: 0 }}>{o.initial}</span>
+  if (o.kind === 'group') return <span style={{ width: size, height: size, borderRadius: size * 0.3, background: o.gradient || '#94A3B8', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.46, fontWeight: 800, flexShrink: 0 }}>{o.initial}</span>
+  return <span style={{ fontSize: size * 0.7, width: size, textAlign: 'center', flexShrink: 0 }}>{o.kind === 'personal' ? '🧾' : '📂'}</span>
+}
+
+/** Filtro de origen para "Mis gastos" (single-select con buscador): Todo / Solo personales / por persona o grupo. */
+export function SourceFilter({ value = 'all', options, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const sel = options.find((o) => o.value === value) || options[0]
+  const list = options.filter((o) => !q || o.label.toLowerCase().includes(q.toLowerCase()))
+  return (
+    <div style={{ flexShrink: 0, position: 'relative', zIndex: open ? 30 : 'auto' }}>
+      <div onClick={() => setOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 9, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '9px 13px', cursor: 'pointer', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)' }}>
+        {srcIcon(sel, 22)}
+        <span style={{ flex: 1, fontWeight: 800, fontSize: 14, color: value !== 'all' ? '#0B1220' : '#64748B' }}>{sel.label}</span>
+        {value !== 'all' && <span onClick={(e) => { e.stopPropagation(); onChange('all') }} style={{ fontSize: 12, fontWeight: 800, color: '#7C3AED' }}>Limpiar</span>}
+        <span style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s', display: 'inline-flex' }}><ChevronDown size={16} color="#94A3B8" w={2.6} /></span>
+      </div>
+      {open && <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />}
+      {open && (
+        <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 6, zIndex: 31, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 13, boxShadow: '0 18px 44px -16px rgba(15,23,42,.45)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F4F6FA', borderRadius: 11, padding: '9px 12px', margin: 10 }}>
+            <Search />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona o grupo…" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontWeight: 700, fontSize: 13.5, color: '#0B1220', width: '100%', fontFamily: 'inherit' }} />
+          </div>
+          <div style={{ maxHeight: 250, overflowY: 'auto', padding: '0 6px 8px' }}>
+            {list.map((o) => {
+              const on = value === o.value
+              return (
+                <div key={o.value} onClick={() => { onChange(o.value); setOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 9px', borderRadius: 10, cursor: 'pointer', background: on ? '#F1ECFD' : 'transparent' }}>
+                  {srcIcon(o, 26)}
+                  <span style={{ flex: 1, fontWeight: on ? 800 : 700, fontSize: 13.5, color: on ? '#0B1220' : '#334155' }}>{o.label}</span>
+                  {on && <Check size={16} />}
+                </div>
+              )
+            })}
+            {list.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '10px 0' }}>Sin coincidencias</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Barra de filtros: categorías (multi) + moneda + pagador + buscador por nombre de movimiento. */
 export function Filters({ cats, catFilter, onCat, query, onQuery, cur, onCur, currencies = [], payer, onPayer, payers = [] }) {
   return (

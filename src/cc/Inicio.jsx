@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import { compute, fmt, totalsByCurrency, friendIds, computeFriend, personById, personColor, isPending, isOneToOne, personalSpent, curList, TONE, TONE_BG } from './logic'
 import { Logo, Chevron, Plus, Archive, EyeToggle, Pin } from './icons'
-import { fmtDateFull } from './dates'
 
 /** Pantalla Inicio: cifra hero + pestañas Personas / Grupos. */
 export default function Inicio({ s, actions }) {
@@ -167,7 +166,7 @@ export default function Inicio({ s, actions }) {
 
       {/* pestañas Personas / Grupos */}
       <div style={{ margin: '0 18px 10px', display: 'flex', gap: 4, background: '#EDF0F5', borderRadius: 13, padding: 4, flexShrink: 0 }}>
-        {tabBtn('personas', 'Personas')}
+        {tabBtn('personas', 'Amigos')}
         {tabBtn('grupos', 'Grupos')}
       </div>
 
@@ -250,7 +249,7 @@ export default function Inicio({ s, actions }) {
                   <div style={{ width: 48, height: 48, borderRadius: 16, background: g.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 19, flexShrink: 0 }}>{g.initial}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220' }}>{g.name}</div>
-                    <div style={{ fontSize: 13, color: '#94A3B8', fontWeight: 600 }}>{g.eventDate ? '📅 ' + fmtDateFull(g.eventDate) + ' · ' + membersText : membersText}</div>
+                    <div style={{ fontSize: 13, color: '#94A3B8', fontWeight: 600 }}>{membersText}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     {curs.length === 0 ? (

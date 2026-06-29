@@ -1,9 +1,9 @@
 import { useEffect, useRef, Fragment } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, TONE } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, curList, CURRENCIES, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin } from './icons'
 import { Futuros, Historicos } from './GroupViews'
-import { Filters } from './CategoryFilter'
+import CategoryFilter, { Filters, CurrencyFilter, SourceFilter } from './CategoryFilter'
 import Config from './Config'
 import SettleSheet from './SettleSheet'
 import Revision from './Revision'
@@ -79,7 +79,7 @@ export default function Chat({ s, actions, typingName }) {
         is1to1 && peer
           ? <FriendLedger s={s} peer={peer} lines={lines} actions={actions} />
           : g.personal
-            ? <PersonalLedger s={s} lines={lines} actions={actions} />
+            ? <PersonalLedger s={s} actions={actions} />
             : <LedgerView s={s} g={g} c={c} bannerLabel={'Saldo en el grupo'} lines={lines} actions={actions} />
       )}
       {s.view === 'months' && <Futuros s={s} actions={actions} />}
@@ -624,28 +624,58 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
 }
 
 /** "Mis gastos" en detalle: tus gastos personales + tu parte de cada grupo (etiquetada),
- * agrupados por día. Los personales se editan; los de grupo saltan a su grupo. */
-function PersonalLedger({ s, lines, actions }) {
+ * con filtros (categoría, moneda, búsqueda) y filtro de ORIGEN (todo / personales / un grupo).
+ * Los personales se editan; los de grupo saltan a su grupo. */
+function PersonalLedger({ s, actions }) {
   const me = s.me || 'dani'
-  const rows = []
+  const all = []
   ;(s.ledgers.personal || []).forEach((e) => {
     if (e.future || e.kind === 'transfer') return
     const cat = catById(s, e.categoryId)
-    rows.push({ id: e.id, gid: 'personal', own: true, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, sub: 'Personal', amountText: fmt(e.amount, e.currency || 'ARS'), impText: '', impColor: '#94A3B8', entry: e })
+    all.push({ id: e.id, gid: 'personal', own: true, categoryId: e.categoryId, cur: e.currency || 'ARS', spent: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, sub: 'Personal', amountText: fmt(e.amount, e.currency || 'ARS'), impText: '', impColor: '#94A3B8', entry: e })
   })
   myShareExpenses(s).forEach((e) => {
-    rows.push({ id: e.id, gid: e.gid, own: false, gname: e.gname, date: e.date, catIcon: e.catIcon, title: e.catName, sub: e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''), amountText: fmt(e.amount, e.cur), impText: '−' + fmt(-e.delta, e.cur), impColor: TONE.neg })
+    all.push({ id: e.id, gid: e.gid, own: false, gname: e.gname, categoryId: e.categoryId, cur: e.cur, spent: -e.delta, date: e.date, catIcon: e.catIcon, title: e.catName, sub: e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''), amountText: fmt(e.amount, e.cur), impText: '−' + fmt(-e.delta, e.cur), impColor: TONE.neg })
   })
-  rows.sort(byRecency)
+
+  // filtro de origen: Todo / Solo personales / cada persona (1:1) o grupo, con ícono diferencial
+  const srcOptions = [{ value: 'all', label: 'Todo', kind: 'all' }, { value: 'personal', label: 'Solo personales', kind: 'personal' }]
+  for (const gid in s.groups) {
+    if (gid === 'personal') continue
+    const g = s.groups[gid]
+    if (isOneToOne(s, gid)) {
+      const peer = peerOf(s, gid) || {}
+      srcOptions.push({ value: gid, label: peer.short || g.name, kind: 'person', color: peer.id ? personColor(s, peer.id) : g.gradient, initial: peer.initial || g.initial })
+    } else {
+      srcOptions.push({ value: gid, label: g.name, kind: 'group', gradient: g.gradient, initial: g.initial })
+    }
+  }
+  const src = s.personalSrc || 'all'
+  const cats = s.categories.filter((c) => all.some((r) => r.categoryId === c.id))
+  const currencies = CURRENCIES.filter((cu) => all.some((r) => r.cur === cu))
+
+  const rows = all
+    .filter((r) => (src === 'all' ? true : src === 'personal' ? r.own : r.gid === src))
+    .filter((r) => catMatch(s.catFilter, { categoryId: r.categoryId }))
+    .filter((r) => curMatch(s.curFilter, { currency: r.cur }))
+    .filter((r) => !s.moveQuery || r.title.toLowerCase().includes(s.moveQuery.toLowerCase()))
+    .sort(byRecency)
+
+  const totals = {}
+  rows.forEach((r) => { totals[r.cur] = (totals[r.cur] || 0) + r.spent })
+  const tl = curList(totals)
+  const lines = tl.length ? tl.map(([cur, v]) => ({ pre: '', amount: fmt(v, cur), post: '', color: '#0B1220' })) : [{ pre: '', amount: fmt(0), post: '', color: '#0B1220' }]
+
   const order = []
   const byDay = {}
   rows.forEach((r) => { const k = fmtDateFull(r.date); if (!byDay[k]) { byDay[k] = []; order.push(k) } byDay[k].push(r) })
   const onRow = (r) => { if (r.own) actions.openEdit(r.entry); else actions.openLedgerOf(r.gid) }
+  const bannerLabel = src === 'personal' ? 'Gastado · solo personales' : src !== 'all' ? 'Gastado en ' + (srcOptions.find((o) => o.value === src) || {}).label : 'Gastado · vos + tu parte'
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
       <div style={{ margin: '14px 16px 6px', borderRadius: 16, padding: '13px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>Gastado · vos + tu parte</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>{bannerLabel}</div>
           <BalanceLines lines={lines} size={15} />
         </div>
         <button onClick={actions.toggleHideAmounts} title={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} aria-label={s.hideAmounts ? 'Mostrar montos' : 'Ocultar montos'} style={{ border: 'none', background: 'transparent', padding: 2, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
@@ -653,7 +683,12 @@ function PersonalLedger({ s, lines, actions }) {
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '16px 0' }}>Todavía no hay gastos.</div>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+          <SourceFilter value={src} options={srcOptions} onChange={actions.setPersonalSrc} />
+          {cats.length > 0 && <CategoryFilter value={s.catFilter} cats={cats} onChange={actions.setCatFilter} />}
+          {currencies.length > 1 && <CurrencyFilter value={s.curFilter} currencies={currencies} onChange={actions.setCurFilter} />}
+        </div>
+        {order.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '16px 0' }}>Sin movimientos que coincidan.</div>}
         {order.map((k) => (
           <div key={k} style={{ display: 'contents' }}>
             <div style={{ padding: '8px 4px 2px' }}><span style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em' }}>{k.toUpperCase()}</span></div>

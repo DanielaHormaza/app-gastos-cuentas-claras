@@ -1,6 +1,6 @@
 import { Close, Plus, Archive, Pin } from './icons'
 import { fmtDateFull } from './dates'
-import { ledgerMonths, isOneToOne, peerOf } from './logic'
+import { ledgerMonths, isOneToOne, peerOf, memberById } from './logic'
 import { ExportBar } from './GroupViews'
 
 const cardShadow = '0 2px 10px -7px rgba(15,23,42,.3)'
@@ -15,6 +15,8 @@ export default function Config({ s, actions }) {
   const monthKeys = ledgerMonths(s, gid, true) // incluye meses de gastos futuros en el rango del export
   const o2o = isOneToOne(s, gid) // ajustes de un espacio 1:1 (persona) vs un grupo
   const peer = o2o ? peerOf(s, gid) : null
+  const rawPeer = o2o ? (g.members.find((m) => m.id !== (s.me || 'dani')) || {}) : null // nombre real (sin alias)
+  const alias = rawPeer ? ((s.aliases || {})[rawPeer.id] || '') : ''
   const pinKind = o2o ? 'person' : 'group'
   const pinId = o2o && peer ? peer.id : gid
   const pinned = (s.pinned || []).some((p) => p.kind === pinKind && p.id === pinId)
@@ -34,8 +36,9 @@ export default function Config({ s, actions }) {
           <div style={{ ...sectionCard, display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 56, height: 56, borderRadius: '50%', background: peer.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 22, flexShrink: 0 }}>{peer.initial}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220' }}>{peer.short}</div>
+              <input value={alias} onChange={(e) => actions.setAlias(rawPeer.id, e.target.value)} placeholder={rawPeer.short} style={{ border: 'none', outline: 'none', fontWeight: 800, fontSize: 16, color: '#0B1220', width: '100%', background: 'transparent', fontFamily: 'inherit' }} />
               <div style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600, marginTop: 2 }}>{peer.pending ? 'Invitación pendiente' : 'Amigos desde ' + (g.createdAt || '—')}</div>
+              <div style={{ fontSize: 10.5, color: '#B6BFCC', fontWeight: 600, marginTop: 2 }}>Cómo lo ves vos · su nombre real es “{rawPeer.short}”</div>
             </div>
           </div>
         ) : (
@@ -47,6 +50,7 @@ export default function Config({ s, actions }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <input value={g.name} onChange={(e) => actions.onGroupName(e.target.value)} style={{ border: 'none', outline: 'none', fontWeight: 800, fontSize: 16, color: '#0B1220', width: '100%', background: 'transparent', fontFamily: 'inherit' }} />
               <input value={g.description || ''} onChange={(e) => actions.onGroupDesc(e.target.value)} placeholder="Agregá una descripción…" style={{ border: 'none', outline: 'none', fontSize: 11.5, color: '#94A3B8', fontWeight: 600, width: '100%', background: 'transparent', marginTop: 2, fontFamily: 'inherit' }} />
+              {g.createdAt && <div style={{ fontSize: 11, color: '#B6BFCC', fontWeight: 700, marginTop: 3 }}>📅 Creado el {g.createdAt}</div>}
             </div>
           </div>
         )}
@@ -73,16 +77,20 @@ export default function Config({ s, actions }) {
           </div>
         </div>
 
-        {/* miembros */}
+        {/* miembros (en un 1:1 es redundante: son solo ustedes dos) */}
+        {!o2o && (
         <div style={sectionCard}>
           <div style={{ fontWeight: 800, fontSize: 13, color: '#64748B', marginBottom: 4 }}>Miembros · {g.members.length}</div>
-          {g.members.map((m) => (
+          {g.members.map((m) => {
+            const disp = memberById(s, gid, m.id)
+            const aliased = disp.short !== m.short
+            return (
             <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
-              <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>{m.initial}</div>
-              <span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#0B1220' }}>{m.name}</span>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>{disp.initial}</div>
+              <span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#0B1220' }}>{disp.name}{aliased && <span style={{ fontWeight: 600, fontSize: 11.5, color: '#94A3B8' }}> · {m.name}</span>}</span>
               {m.id === (s.me || 'dani') && <span style={{ fontSize: 10, fontWeight: 800, color: '#7C3AED', background: '#F1ECFD', padding: '3px 7px', borderRadius: 999 }}>VOS</span>}
             </div>
-          ))}
+          )})}
           {s.addingMember ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 2px' }}>
               <input value={s.newMemberName} onChange={(e) => actions.onNewMemberName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && actions.onConfirmAddMember()} placeholder="Nombre del nuevo miembro" style={{ flex: 1, border: '1.5px solid #E2E8F0', borderRadius: 10, padding: '9px 11px', outline: 'none', fontWeight: 700, fontSize: 13.5, color: '#0B1220', width: '100%', fontFamily: 'inherit' }} />
@@ -94,6 +102,7 @@ export default function Config({ s, actions }) {
             </div>
           )}
         </div>
+        )}
 
         {/* división */}
         <div style={sectionCard}>
@@ -104,10 +113,13 @@ export default function Config({ s, actions }) {
           <div style={{ display: 'flex', height: 11, borderRadius: 999, overflow: 'hidden', background: '#EEF1F6', marginBottom: 12 }}>
             {g.members.map((m) => <div key={m.id} style={{ width: (sp[m.id] || 0) + '%', background: m.color, transition: 'width .2s ease' }} />)}
           </div>
-          {g.members.map((m) => (
+          {g.members.map((m) => {
+            const disp = memberById(s, gid, m.id)
+            const aliased = disp.short !== m.short
+            return (
             <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 0' }}>
-              <div style={{ width: 26, height: 26, borderRadius: '50%', background: m.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 11, flexShrink: 0 }}>{m.initial}</div>
-              <span style={{ flex: 1, fontWeight: 700, fontSize: 13, color: '#334155' }}>{m.name}</span>
+              <div style={{ width: 26, height: 26, borderRadius: '50%', background: m.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 11, flexShrink: 0 }}>{disp.initial}</div>
+              <span style={{ flex: 1, fontWeight: 700, fontSize: 13, color: '#334155', minWidth: 0 }}>{disp.name}{aliased && <span style={{ fontWeight: 600, fontSize: 11, color: '#94A3B8' }}> · {m.name}</span>}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <div onClick={() => actions.adjustSplit(m.id, -5)} style={stepper}>−</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 3, border: '1.5px solid #E2E8F0', borderRadius: 10, padding: '5px 8px' }}>
@@ -117,7 +129,7 @@ export default function Config({ s, actions }) {
                 <div onClick={() => actions.adjustSplit(m.id, 5)} style={stepper}>+</div>
               </div>
             </div>
-          ))}
+          )})}
           <div style={{ fontSize: 11, color: '#B6BFCC', fontWeight: 700, marginTop: 8 }}>
             {meta.by ? 'Modificado por ' + meta.by + ' · ' + fmtDateFull(meta.at) : 'Sin cambios todavía · rige el reparto inicial'}
           </div>
@@ -142,7 +154,6 @@ export default function Config({ s, actions }) {
             </div>
           )}
         </div>
-        <div style={{ textAlign: 'center', fontSize: 11.5, color: '#B6BFCC', fontWeight: 700, padding: '2px 0 6px' }}>{o2o ? 'Amigos desde ' + (g.createdAt || '—') : 'Grupo creado el ' + (g.createdAt || '—')}</div>
       </div>
     </div>
   )

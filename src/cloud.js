@@ -69,6 +69,12 @@ export async function cloudSaveSplit(gid, fromDate, shares, by, at) {
   if (error) console.error('[saveSplit]', error.message)
 }
 
+// Guarda los alias del usuario (cómo llama a cada persona) en su perfil. El row ya existe (se crea al login).
+export async function cloudSaveAliases(userId, aliases) {
+  const { error } = await supabase.from('profiles').update({ aliases: aliases || {} }).eq('id', userId)
+  if (error) console.error('[saveAliases]', error.message)
+}
+
 // Lee todo lo del usuario desde Supabase y lo arma en la forma del estado `s`.
 // userId: auth.user.id del logueado (para detectar quién soy → state.me).
 export async function loadCloudState(userId) {
@@ -79,7 +85,7 @@ export async function loadCloudState(userId) {
     supabase.from('split_history').select('*').order('from_date', { ascending: true }),
     supabase.from('expenses').select('*'),
     supabase.from('messages').select('*'),
-    supabase.from('profiles').select('founder_number, created_at').eq('id', userId).maybeSingle(),
+    supabase.from('profiles').select('founder_number, created_at, aliases').eq('id', userId).maybeSingle(),
   ])
   const bad = [groupsR, membersR, catsR, splitsR, expR, msgR].find((r) => r.error)
   if (bad) throw new Error(bad.error.message)
@@ -163,6 +169,7 @@ export async function loadCloudState(userId) {
     ...base,
     me,
     profile: { ...base.profile, name: meName, founderNumber: profR.data?.founder_number || null, memberSince: profR.data?.created_at || null },
+    aliases: profR.data?.aliases || {},
     groups,
     splits,
     splitLog,

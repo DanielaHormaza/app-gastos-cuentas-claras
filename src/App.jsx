@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
 import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith } from './cc/logic'
-import { todayISO, nowTime } from './cc/dates'
+import { todayISO, nowTime, fmtDateFull } from './cc/dates'
 import Inicio from './cc/Inicio'
 import Chat from './cc/Chat'
 import EditSheet from './cc/EditSheet'
@@ -13,7 +13,7 @@ import { MethodDetail, MonthDetail } from './cc/Detail'
 import { Logo } from './cc/icons'
 import Login from './Login'
 import { supabase } from './supabase'
-import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember } from './cloud'
+import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases } from './cloud'
 import { setAmountsHidden } from './cc/logic'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
@@ -106,7 +106,7 @@ const buildDirect = (prev, pid, person, pending, email) => {
   const friend = { id: pid, name: person.name || person.short, short: person.short, color, initial: person.initial }
   if (pending) friend.pending = true
   if (email) friend.email = email
-  const group = { id, name: friend.short, initial: friend.initial, gradient: 'linear-gradient(135deg,' + color + ',#3B82F6)', description: 'Espacio uno a uno.', createdAt: todayISO(), direct: true, members: [meM, friend] }
+  const group = { id, name: friend.short, initial: friend.initial, gradient: 'linear-gradient(135deg,' + color + ',#3B82F6)', description: 'Espacio uno a uno.', createdAt: fmtDateFull(todayISO()), direct: true, members: [meM, friend] }
   return {
     groups: { ...prev.groups, [id]: group },
     splits: { ...prev.splits, [id]: { [me]: 50, [pid]: 50 } },
@@ -118,6 +118,9 @@ const buildDirect = (prev, pid, person, pending, email) => {
     screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false,
   }
 }
+
+// Filtros que se resetean al entrar a otro espacio (para que no "leakeen" entre grupos/personal).
+const FILTER_RESET = { catFilter: [], curFilter: 'all', payerFilter: 'all', moveQuery: '', personalSrc: 'all' }
 
 // Layout de dos paneles a partir de ~900px de ancho.
 function useDesktop() {
@@ -134,7 +137,7 @@ function useDesktop() {
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
 const KEY = 'cuentas-claras:v4'
 const HIDE_KEY = 'cuentas-claras:hideAmounts' // preferencia por dispositivo (no se sincroniza)
-const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'pinned', 'histSel']
+const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'pinned', 'aliases', 'histSel']
 
 function load() {
   const hideAmounts = localStorage.getItem(HIDE_KEY) === '1'
@@ -186,6 +189,7 @@ export default function App() {
   const grpSyncRef = useRef(null) // snapshot de grupos/miembros ya sincronizados
   const catSyncRef = useRef(null) // ids de categorías ya sincronizadas
   const msgSyncRef = useRef(null) // snapshot de mensajes ya sincronizados
+  const aliasSyncRef = useRef(false) // ya se tomó el snapshot inicial de aliases
   const typingChanRef = useRef(null) // canal de "escribiendo…" (broadcast) del grupo activo
   const typingTimerRef = useRef(null) // limpia el cartel de "escribiendo…" tras unos segundos
   const lastTypingSentRef = useRef(0) // throttle de envío de "escribiendo…"
@@ -221,7 +225,7 @@ export default function App() {
         const cloud = await loadCloudState(session.user.id)
         // conservar el historial de chat ya guardado (por dispositivo); intro solo si no hay
         if (!cancelled) {
-          setS((prev) => ({ ...cloud, threads: mergeThreads(prev.threads, cloud.threads), hideAmounts: prev.hideAmounts, pinned: prev.pinned, authEmail: prev.authEmail })) // chat compartido desde la nube; hideAmounts/pinned/authEmail son del cliente, no de la nube
+          setS((prev) => ({ ...cloud, threads: mergeThreads(prev.threads, cloud.threads), hideAmounts: prev.hideAmounts, pinned: prev.pinned, authEmail: prev.authEmail })) // chat/aliases desde la nube; hideAmounts/pinned/authEmail son del cliente
           setDataReady(true)
         }
       } catch (e) {
@@ -287,6 +291,13 @@ export default function App() {
     for (const id in prev) if (!cur[id]) cloudDeleteMessage(id)
     msgSyncRef.current = cur
   }, [s.threads, dataReady])
+
+  // espejo de alias (cómo llamás a cada persona) → perfil en Supabase, para que te sigan en todos tus dispositivos.
+  useEffect(() => {
+    if (!dataReady || !session?.user) { aliasSyncRef.current = false; return }
+    if (!aliasSyncRef.current) { aliasSyncRef.current = true; return } // primera vez tras cargar: solo snapshot
+    cloudSaveAliases(session.user.id, s.aliases)
+  }, [s.aliases, dataReady])
 
   // TIEMPO REAL: si otro dispositivo/usuario cambia algo, recargamos los datos (sin perder navegación ni chat).
   useEffect(() => {
@@ -430,8 +441,8 @@ export default function App() {
     // ---- navegación ----
     signOut: () => supabase.auth.signOut(),
     openProfile: () => set({ screen: 'profile', menuOpen: false }),
-    openPersonal: () => set({ screen: 'chat', groupId: 'personal', view: 'chat', menuOpen: false, configOpen: false }),
-    openGroup: (id) => set({ screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false }),
+    openPersonal: () => set({ ...FILTER_RESET, screen: 'chat', groupId: 'personal', view: 'chat', menuOpen: false, configOpen: false }),
+    openGroup: (id) => set({ ...FILTER_RESET, screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false }),
     openNewGroup: () => set({ screen: 'newgroup', newGroup: { name: '', desc: '', date: '', members: [], memberName: '', invited: false } }),
     openArchived: () => set({ screen: 'archived', groupQuery: '' }),
     backToList: () => set({ screen: 'list' }),
@@ -439,17 +450,26 @@ export default function App() {
     // ---- modelo centrado en personas ----
     setHomeTab: (tab) => set({ homeTab: tab }),
     openFriend: (pid) => set({ screen: 'friend', friendId: pid, menuOpen: false, configOpen: false }),
+    // Alias local: cómo VOS llamás a una persona (vacío = su nombre real).
+    setAlias: (pid, name) =>
+      set((prev) => {
+        const a = { ...prev.aliases }
+        const v = (name || '').trim()
+        if (v) a[pid] = v
+        else delete a[pid]
+        return { aliases: a }
+      }),
     backFromFriend: () => set({ screen: 'list' }),
     // Abre el espacio 1:1 con una persona (su grupo de 2; si no existe, lo crea al vuelo, local).
     openFriendChat: (pid) =>
       set((prev) => {
         const existing = directGroupWith(prev, pid)
-        if (existing) return { screen: 'chat', groupId: existing, view: 'chat', menuOpen: false, configOpen: false }
+        if (existing) return { ...FILTER_RESET, screen: 'chat', groupId: existing, view: 'chat', menuOpen: false, configOpen: false }
         const p = personById(prev, pid)
-        return buildDirect(prev, pid, p, !!p.pending, p.email)
+        return { ...FILTER_RESET, ...buildDirect(prev, pid, p, !!p.pending, p.email) }
       }),
     // Abre los movimientos de un grupo (para saltar al origen de un gasto desde la vista agregada).
-    openLedgerOf: (id) => set({ screen: 'chat', groupId: id, view: 'ledger', menuOpen: false, configOpen: false }),
+    openLedgerOf: (id) => set({ ...FILTER_RESET, screen: 'chat', groupId: id, view: 'ledger', menuOpen: false, configOpen: false }),
 
     // ---- fijados en el inicio (personas y grupos, máx. 2) ----
     // Fijar/desfijar: si ya está → pide confirmación para desfijar; si no y hay lugar → fija.
@@ -752,6 +772,7 @@ export default function App() {
     setCurFilter: (v) => set({ curFilter: v }),
     setPayerFilter: (v) => set({ payerFilter: v }),
     setMoveQuery: (v) => set({ moveQuery: v }),
+    setPersonalSrc: (v) => set({ personalSrc: v }),
     toggleHideAmounts: () =>
       set((prev) => {
         const v = !prev.hideAmounts
@@ -874,7 +895,7 @@ export default function App() {
         const base = Math.floor(100 / members.length)
         let acc = 0
         members.forEach((mm, i) => { split[mm.id] = i === members.length - 1 ? 100 - acc : base; acc += base })
-        const group = { id, name: nm, initial: nm[0].toUpperCase(), gradient: grad, description: (prev.newGroup.desc || '').trim(), createdAt: '15 jun 2026', isGroup: true, members }
+        const group = { id, name: nm, initial: nm[0].toUpperCase(), gradient: grad, description: (prev.newGroup.desc || '').trim(), createdAt: fmtDateFull(todayISO()), isGroup: true, members }
         const evDate = (prev.newGroup.date || '').trim()
         if (evDate) group.eventDate = evDate
         return {

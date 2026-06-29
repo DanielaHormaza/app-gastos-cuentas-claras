@@ -39,8 +39,17 @@ export function catById(state, id) {
   return state.categories.find((c) => c.id === id) || { icon: '🏷️', name: 'Otros' }
 }
 
+// Alias por dispositivo (estilo WhatsApp): cómo VOS llamás a otra persona. No cambia su nombre real
+// (que define cada uno para sí) ni el nombre del grupo. Nunca se aplica sobre vos mismo.
+export function withAlias(state, m) {
+  if (!m) return m
+  const a = state.aliases && state.aliases[m.id]
+  if (!a || m.id === (state.me || 'dani')) return m
+  return { ...m, short: a, name: a, initial: (a.trim()[0] || m.initial || '?').toUpperCase() }
+}
+
 export function memberById(state, gid, id) {
-  return state.groups[gid].members.find((m) => m.id === id) || { short: '?', color: '#94A3B8', initial: '?', name: '?' }
+  return withAlias(state, state.groups[gid].members.find((m) => m.id === id) || { short: '?', color: '#94A3B8', initial: '?', name: '?' })
 }
 
 // Paleta curada de iconos para elegir al crear una categoría.
@@ -209,7 +218,7 @@ export function friendIds(state) {
 export function personById(state, pid) {
   for (const gid in state.groups) {
     const m = state.groups[gid].members.find((x) => x.id === pid)
-    if (m) return m
+    if (m) return withAlias(state, m)
   }
   return { id: pid, short: '?', name: '?', color: '#94A3B8', initial: '?' }
 }
@@ -322,7 +331,7 @@ export function myShareExpenses(state) {
       if (mine < 1) return
       const cat = catById(state, e.categoryId)
       const payer = memberById(state, gid, e.payerId)
-      out.push({ id: e.id, gid, gname, ggrad: g.gradient, ginitial: g.initial, direct: false, catIcon: cat.icon, catName: e.desc || cat.name, amount: e.amount, cur: e.currency || 'ARS', date: e.date, payerId: e.payerId, payerShort: payer.short, delta: -mine })
+      out.push({ id: e.id, gid, gname, ggrad: g.gradient, ginitial: g.initial, direct: false, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || cat.name, amount: e.amount, cur: e.currency || 'ARS', date: e.date, payerId: e.payerId, payerShort: payer.short, delta: -mine })
     })
   }
   return out
@@ -340,7 +349,7 @@ export function isOneToOne(state, gid) {
 export function peerOf(state, gid) {
   const me = state.me || 'dani'
   const g = state.groups[gid]
-  return g ? g.members.find((m) => m.id !== me) : null
+  return g ? withAlias(state, g.members.find((m) => m.id !== me)) : null
 }
 
 // gid del espacio 1:1 con una persona: primero uno marcado direct, si no cualquier grupo de 2 con [me, pid].
