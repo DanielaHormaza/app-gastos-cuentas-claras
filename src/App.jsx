@@ -142,9 +142,15 @@ const DEMO_FLAG = 'cc-demo' // '1' = el visitante entró por "Explorar demo"
 const HIDE_KEY = 'cuentas-claras:hideAmounts' // preferencia por dispositivo (no se sincroniza)
 const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'pinned', 'aliases', 'histSel']
 
-// ¿Estamos en modo demo? (bandera local que setea el botón "Explorar demo" del login)
+// ¿Estamos en modo demo? Se activa con el botón "Explorar demo" del login o con ?demo=1 en la URL
+// (link directo para compartir). El param deja la bandera puesta para que sobreviva a las recargas.
 export function isDemo() {
-  try { return typeof localStorage !== 'undefined' && localStorage.getItem(DEMO_FLAG) === '1' } catch { return false }
+  try {
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('demo') === '1') {
+      localStorage.setItem(DEMO_FLAG, '1')
+    }
+    return typeof localStorage !== 'undefined' && localStorage.getItem(DEMO_FLAG) === '1'
+  } catch { return false }
 }
 
 function load() {
