@@ -1,4 +1,4 @@
-import { Close, Plus, Archive, Pin } from './icons'
+import { Close, Plus, Archive, Pin, Trash } from './icons'
 import { fmtDateFull } from './dates'
 import { ledgerMonths, isOneToOne, peerOf, memberById } from './logic'
 import { ExportBar } from './GroupViews'
@@ -14,6 +14,7 @@ export default function Config({ s, actions }) {
   const meta = (s.splitMeta && s.splitMeta[gid]) || {}
   const monthKeys = ledgerMonths(s, gid, true) // incluye meses de gastos futuros en el rango del export
   const o2o = isOneToOne(s, gid) // ajustes de un espacio 1:1 (persona) vs un grupo
+  const hasMovements = ((s.ledgers[gid] || []).length) > 0 // con movimientos → archivar; vacío → eliminar
   const peer = o2o ? peerOf(s, gid) : null
   const rawPeer = o2o ? (g.members.find((m) => m.id !== (s.me || 'dani')) || {}) : null // nombre real (sin alias)
   const alias = rawPeer ? ((s.aliases || {})[rawPeer.id] || '') : ''
@@ -142,17 +143,22 @@ export default function Config({ s, actions }) {
           </div>
         )}
 
-        {/* acciones */}
-        <div style={{ background: '#fff', borderRadius: 16, padding: '4px 12px', boxShadow: cardShadow }}>
-          <div onClick={actions.onArchive} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', cursor: 'pointer' }}>
-            <Archive size={17} color="#D97706" /><span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#B45309' }}>{o2o ? 'Archivar 1:1' : 'Archivar grupo'}</span>
-          </div>
-          {!o2o && (
-            <div onClick={actions.onArchive} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', borderTop: '1px solid #F1F4F9', cursor: 'pointer' }}>
-              <Archive size={17} color="#E11D5B" /><span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#E11D5B' }}>Salir del grupo</span>
+        {/* acciones: sin movimientos → eliminar de verdad; con movimientos → archivar (se conservan) */}
+        {hasMovements ? (
+          <div style={{ background: '#fff', borderRadius: 16, padding: '4px 12px', boxShadow: cardShadow }}>
+            <div onClick={actions.onArchive} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', cursor: 'pointer' }}>
+              <Archive size={17} color="#D97706" /><span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#B45309' }}>{o2o ? 'Archivar 1:1' : 'Archivar grupo'}</span>
             </div>
-          )}
-        </div>
+            <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 600, padding: '0 0 10px', lineHeight: 1.4 }}>Se oculta de las listas, pero el saldo sigue contando y los movimientos se conservan. Podés desarchivarlo cuando quieras.</div>
+          </div>
+        ) : (
+          <div style={{ background: '#fff', borderRadius: 16, padding: '4px 12px', boxShadow: cardShadow }}>
+            <div onClick={actions.requestDeleteGroup} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', cursor: 'pointer' }}>
+              <Trash size={17} color="#E11D5B" /><span style={{ flex: 1, fontWeight: 800, fontSize: 13.5, color: '#E11D5B' }}>{o2o ? 'Eliminar 1:1' : 'Eliminar grupo'}</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 600, padding: '0 0 10px', lineHeight: 1.4 }}>No tiene movimientos, así que se puede borrar para siempre.</div>
+          </div>
+        )}
       </div>
     </div>
   )

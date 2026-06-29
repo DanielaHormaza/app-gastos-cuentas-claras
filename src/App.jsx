@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
+import { makeDemoState } from './cc/seedDemo'
 import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith } from './cc/logic'
 import { todayISO, nowTime, fmtDateFull } from './cc/dates'
 import Inicio from './cc/Inicio'
@@ -13,7 +14,7 @@ import { MethodDetail, MonthDetail } from './cc/Detail'
 import { Logo } from './cc/icons'
 import Login from './Login'
 import { supabase } from './supabase'
-import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency } from './cloud'
+import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency, cloudSetArchived, cloudDeleteGroup } from './cloud'
 import { setAmountsHidden, CURRENCIES } from './cc/logic'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
@@ -136,11 +137,30 @@ function useDesktop() {
 
 // Persistencia local. SUPABASE (V2): reemplazar por API/DB.
 const KEY = 'cuentas-claras:v4'
+const DEMO_KEY = 'cuentas-claras:demo-v1' // datos ficticios del modo demo (aparte de los reales)
+const DEMO_FLAG = 'cc-demo' // '1' = el visitante entró por "Explorar demo"
 const HIDE_KEY = 'cuentas-claras:hideAmounts' // preferencia por dispositivo (no se sincroniza)
 const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'pinned', 'aliases', 'histSel']
 
+// ¿Estamos en modo demo? (bandera local que setea el botón "Explorar demo" del login)
+export function isDemo() {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem(DEMO_FLAG) === '1' } catch { return false }
+}
+
 function load() {
   const hideAmounts = localStorage.getItem(HIDE_KEY) === '1'
+  // MODO DEMO: datos 100% ficticios en su propia clave; nunca toca Supabase ni los datos reales.
+  // Si todavía no hay estado demo guardado, arranca del seed ficticio (makeDemoState).
+  if (isDemo()) {
+    let st
+    try {
+      const raw = localStorage.getItem(DEMO_KEY)
+      st = raw ? migrate({ ...makeDemoState(), ...JSON.parse(raw), hideAmounts }) : { ...makeDemoState(), hideAmounts }
+    } catch {
+      st = { ...makeDemoState(), hideAmounts }
+    }
+    return st
+  }
   // DEV: ?fresh=1 ignora (y borra) los datos guardados y arranca del seed de demo (Asado, Pato, etc.).
   const fresh = import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).get('fresh') === '1'
   if (fresh) { try { localStorage.removeItem(KEY) } catch { /* sin storage */ } }
@@ -192,6 +212,7 @@ export default function App() {
   const [dataErr, setDataErr] = useState(null)
   const ledSyncRef = useRef(null) // snapshot de movimientos ya sincronizados
   const grpSyncRef = useRef(null) // snapshot de grupos/miembros ya sincronizados
+  const archSyncRef = useRef(null) // snapshot del mapa de archivados ya sincronizado
   const catSyncRef = useRef(null) // ids de categorías ya sincronizadas
   const msgSyncRef = useRef(null) // snapshot de mensajes ya sincronizados
   const aliasSyncRef = useRef(false) // ya se tomó el snapshot inicial de aliases
@@ -295,6 +316,21 @@ export default function App() {
     grpSyncRef.current = cur
   }, [s.groups, dataReady])
 
+  // espejo de archivados → Supabase (columna groups.archived). Gated por dataReady → la demo no escribe.
+  // Detecta cambios de archivar/desarchivar y los persiste; así sobrevive a recargas y sincroniza dispositivos.
+  useEffect(() => {
+    if (!dataReady) { archSyncRef.current = null; return }
+    const cur = s.archived || {}
+    const prev = archSyncRef.current
+    if (prev === null) { archSyncRef.current = cur; return } // primera vez tras cargar: solo snapshot
+    const ids = new Set([...Object.keys(prev), ...Object.keys(cur)])
+    for (const id of ids) {
+      if (id === 'personal') continue
+      if (!!prev[id] !== !!cur[id]) cloudSetArchived(id, !!cur[id])
+    }
+    archSyncRef.current = cur
+  }, [s.archived, dataReady])
+
   // espejo de categorías nuevas → Supabase
   useEffect(() => {
     if (!dataReady) { catSyncRef.current = null; return }
@@ -354,9 +390,10 @@ export default function App() {
           const cloud = await loadCloudState(session.user.id)
           ledSyncRef.current = ledSnapshot(cloud.ledgers)
           grpSyncRef.current = groupSnapshot(cloud.groups)
+          archSyncRef.current = cloud.archived
           catSyncRef.current = new Set(cloud.categories.map((c) => c.id))
           msgSyncRef.current = msgSnapshot(cloud.threads)
-          setS((prev) => ({ ...prev, me: cloud.me, groups: cloud.groups, splits: cloud.splits, splitLog: cloud.splitLog, splitMeta: cloud.splitMeta, ledgers: cloud.ledgers, categories: cloud.categories, threads: mergeThreads(prev.threads, cloud.threads) }))
+          setS((prev) => ({ ...prev, me: cloud.me, groups: cloud.groups, splits: cloud.splits, splitLog: cloud.splitLog, splitMeta: cloud.splitMeta, ledgers: cloud.ledgers, archived: cloud.archived, categories: cloud.categories, threads: mergeThreads(prev.threads, cloud.threads) }))
         } catch (e) {
           console.error('[realtime] error al recargar:', e.message)
         }
@@ -423,10 +460,11 @@ export default function App() {
   }, [])
 
   // Persiste solo los datos (no el estado de navegación transitorio).
+  // En modo demo se guarda en una clave aparte (DEMO_KEY) para no pisar los datos reales.
   useEffect(() => {
     const data = {}
     DATA_KEYS.forEach((k) => (data[k] = s[k]))
-    localStorage.setItem(KEY, JSON.stringify(data))
+    localStorage.setItem(isDemo() ? DEMO_KEY : KEY, JSON.stringify(data))
   }, DATA_KEYS.map((k) => s[k])) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Merge parcial (como el setState del prototipo).
@@ -894,6 +932,33 @@ export default function App() {
     onGroupQuery: (v) => set({ groupQuery: v }),
     restoreGroup: (id) => set((prev) => { const a = { ...prev.archived }; delete a[id]; return { archived: a } }),
 
+    // ---- eliminar grupo / 1:1 vacío (sin movimientos) ----
+    // Pide confirmación; al confirmar borra el grupo de la nube (cascade) y lo saca del estado.
+    // Los grupos CON movimientos no se eliminan (se archivan): el botón ni siquiera aparece.
+    requestDeleteGroup: () => set({ confirmDeleteGroup: gid }),
+    cancelDeleteGroup: () => set({ confirmDeleteGroup: null }),
+    confirmDeleteGroupYes: () => {
+      const delId = s.confirmDeleteGroup
+      if (!delId || delId === 'personal') return set({ confirmDeleteGroup: null })
+      if ((s.ledgers[delId] || []).length > 0) return set({ confirmDeleteGroup: null }) // seguridad: nunca borrar con movimientos
+      if (dataReady) cloudDeleteGroup(delId)
+      set((prev) => {
+        const omit = (obj) => { const o = { ...obj }; delete o[delId]; return o }
+        return {
+          groups: omit(prev.groups), splits: omit(prev.splits), splitLog: omit(prev.splitLog), splitMeta: omit(prev.splitMeta),
+          ledgers: omit(prev.ledgers), threads: omit(prev.threads), payments: omit(prev.payments), archived: omit(prev.archived),
+          pinned: (prev.pinned || []).filter((p) => !(p.kind === 'group' && p.id === delId)),
+          confirmDeleteGroup: null, configOpen: false, screen: 'list', groupId: null, menuOpen: false,
+        }
+      })
+    },
+
+    // ---- modo demo ----
+    // Salir: limpia la bandera y los datos demo, y recarga (vuelve al login con datos reales).
+    exitDemo: () => { try { localStorage.removeItem(DEMO_FLAG); localStorage.removeItem(DEMO_KEY) } catch { /* sin storage */ } window.location.reload() },
+    // Restaurar: borra el estado demo modificado y recarga (vuelve a sembrar el seed ficticio limpio).
+    restoreDemo: () => { try { localStorage.removeItem(DEMO_KEY) } catch { /* sin storage */ } window.location.reload() },
+
     // ---- nuevo grupo ----
     onNewGroupField: (field, v) => set((prev) => ({ newGroup: { ...prev.newGroup, [field]: v } })),
     // Agrega un participante tipeado a mano (sin cuenta → invitado pendiente).
@@ -981,8 +1046,10 @@ export default function App() {
   // Desactivar: localStorage.removeItem('cc-dev') (o abrir con ?dev=0) y recargar.
   const devParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('dev') : null
   const devBypass = import.meta.env.DEV && typeof localStorage !== 'undefined' && (localStorage.getItem('cc-dev') === '1' || devParam === '1') && devParam !== '0'
+  // MODO DEMO (producción): salta el login y usa datos ficticios locales (nunca toca Supabase).
+  const demoActive = isDemo()
 
-  if (!devBypass) {
+  if (!devBypass && !demoActive) {
     if (session === undefined) return <Splash />
     if (!session) return <Login />
     if (dataErr) {
@@ -1012,6 +1079,8 @@ export default function App() {
         </main>
         {s.addFriend && <AddFriend s={s} actions={actions} />}
         {s.confirmUnpin && <UnpinConfirm s={s} actions={actions} />}
+        {s.confirmDeleteGroup && <DeleteGroupConfirm s={s} actions={actions} />}
+        {demoActive && <DemoBanner actions={actions} />}
       </div>
     )
   }
@@ -1022,6 +1091,8 @@ export default function App() {
         {s.screen === 'list' ? <Inicio s={s} actions={actions} /> : screenEl}
         {s.addFriend && <AddFriend s={s} actions={actions} />}
         {s.confirmUnpin && <UnpinConfirm s={s} actions={actions} />}
+        {s.confirmDeleteGroup && <DeleteGroupConfirm s={s} actions={actions} />}
+        {demoActive && <DemoBanner actions={actions} />}
       </div>
     </div>
   )
@@ -1042,6 +1113,42 @@ function UnpinConfirm({ s, actions }) {
           <button onClick={actions.confirmUnpinYes} style={{ flex: 1, border: 'none', background: '#7C3AED', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 14, padding: 12, borderRadius: 13, cursor: 'pointer' }}>Desfijar</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Confirmación antes de eliminar un grupo / 1:1 vacío (sin movimientos). Acción destructiva. */
+function DeleteGroupConfirm({ s, actions }) {
+  const gid = s.confirmDeleteGroup
+  const g = s.groups[gid]
+  if (!g) return null
+  const o2o = g.direct || (!g.isGroup && g.members.length === 2)
+  const peer = o2o ? (g.members.find((m) => m.id !== (s.me || 'dani')) || {}) : null
+  const name = o2o ? (peer.short || 'este 1:1') : g.name
+  return (
+    <div onClick={actions.cancelDeleteGroup} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(15,23,42,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, animation: 'ccFade .15s ease' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 320, background: '#fff', borderRadius: 20, padding: '22px 20px', textAlign: 'center', boxShadow: '0 30px 60px -20px rgba(15,23,42,.5)' }}>
+        <div style={{ fontSize: 30, marginBottom: 8 }}>🗑️</div>
+        <div style={{ fontWeight: 800, fontSize: 16.5, color: '#0B1220' }}>¿Eliminar “{name}”?</div>
+        <div style={{ fontSize: 13, color: '#64748B', fontWeight: 600, marginTop: 4, lineHeight: 1.4 }}>No tiene movimientos, así que se borra para siempre. Esta acción no se puede deshacer.</div>
+        <div style={{ display: 'flex', gap: 9, marginTop: 18 }}>
+          <button onClick={actions.cancelDeleteGroup} style={{ flex: 1, border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontFamily: 'inherit', fontWeight: 800, fontSize: 14, padding: 12, borderRadius: 13, cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={actions.confirmDeleteGroupYes} style={{ flex: 1, border: 'none', background: '#E11D5B', color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 14, padding: 12, borderRadius: 13, cursor: 'pointer' }}>Eliminar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Banner flotante del modo demo: avisa que son datos ficticios y deja restaurar / salir. */
+function DemoBanner({ actions }) {
+  const btn = { border: 'none', fontFamily: 'inherit', fontWeight: 800, fontSize: 11.5, padding: '6px 10px', borderRadius: 999, cursor: 'pointer' }
+  return (
+    <div style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)', zIndex: 60, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(11,18,32,.92)', color: '#fff', padding: '8px 8px 8px 14px', borderRadius: 999, boxShadow: '0 14px 34px -12px rgba(15,23,42,.6)', backdropFilter: 'blur(6px)', maxWidth: 'calc(100vw - 24px)' }}>
+      <span style={{ fontSize: 13 }}>🧪</span>
+      <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>Versión demo · datos ficticios</span>
+      <button onClick={actions.restoreDemo} title="Restaurar los datos demo originales" style={{ ...btn, background: 'rgba(255,255,255,.15)', color: '#fff' }}>↺ Restaurar</button>
+      <button onClick={actions.exitDemo} style={{ ...btn, background: '#fff', color: '#0B1220' }}>Salir</button>
     </div>
   )
 }

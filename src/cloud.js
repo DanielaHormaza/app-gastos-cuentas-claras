@@ -41,6 +41,17 @@ export async function cloudUpsertGroup(group) {
   const { error } = await supabase.from('groups').upsert(groupRow(group))
   if (error) console.error('[upsertGroup]', error.message)
 }
+// Archivar / desarchivar un grupo (persiste y sincroniza entre dispositivos). RLS: ya sos miembro.
+export async function cloudSetArchived(gid, archived) {
+  const { error } = await supabase.from('groups').update({ archived: !!archived }).eq('id', gid)
+  if (error) console.error('[setArchived]', error.message)
+}
+// Eliminar un grupo (solo se usa con grupos SIN movimientos). El ON DELETE CASCADE limpia
+// miembros, reparto, mensajes y cualquier gasto asociado. RLS: ya sos miembro.
+export async function cloudDeleteGroup(gid) {
+  const { error } = await supabase.from('groups').delete().eq('id', gid)
+  if (error) console.error('[deleteGroup]', error.message)
+}
 // Alta/edición de un miembro en un grupo donde ya sos miembro (no toca user_id: lo reclama su dueño al loguearse).
 export async function cloudUpsertMember(m, gid) {
   const { error } = await supabase
@@ -100,8 +111,10 @@ export async function loadCloudState(userId) {
 
   // grupos + miembros (el primero insertado = "ancla" para los modos full)
   const groups = {}
+  const archived = {} // gid → true (archivado, persistido en la columna groups.archived)
   for (const g of groupsR.data) {
     groups[g.id] = { id: g.id, name: g.name, initial: g.initial, gradient: g.gradient, description: g.description, personal: !!g.personal, isGroup: !!g.is_group, direct: !!g.direct, eventDate: g.event_date || undefined, createdAt: g.created_at, members: [] }
+    if (g.archived) archived[g.id] = true
   }
   let me = 'dani'
   for (const m of membersR.data) {
@@ -206,7 +219,7 @@ export async function loadCloudState(userId) {
     ledgers,
     categories: categories.length ? categories : base.categories,
     payments: {},
-    archived: {},
+    archived,
     threads,
   }
 }

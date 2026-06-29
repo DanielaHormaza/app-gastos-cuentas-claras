@@ -19,6 +19,15 @@ export default function Login() {
   const mail = email.trim()
   const reset = (m) => { setMode(m); setErr('') }
 
+  // Explorar demo: activa el modo demo (datos ficticios locales) y recarga. No usa Supabase ni cuenta.
+  const enterDemo = () => {
+    try {
+      localStorage.setItem('cc-demo', '1')
+      localStorage.removeItem('cuentas-claras:demo-v1') // arranca siempre del seed ficticio limpio
+    } catch (e) { /* sin storage */ }
+    window.location.reload()
+  }
+
   // Entrar con email + contraseña (no usa email: anda en iOS-PWA sin redirecciones).
   const signin = async () => {
     if (!mail || !pass || loading) return
@@ -104,6 +113,12 @@ export default function Login() {
             <div style={{ borderTop: '1px solid #EEF1F6', margin: '16px 0 0', paddingTop: 14, textAlign: 'center' }}>
               <span onClick={sendMagic} style={{ fontSize: 12.5, fontWeight: 800, color: '#94A3B8', cursor: loading ? 'default' : 'pointer' }}>Entrar con enlace por email</span>
             </div>
+
+            {/* Explorar la app con datos ficticios, sin crear cuenta */}
+            <button onClick={enterDemo} style={{ width: '100%', marginTop: 14, border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontFamily: 'inherit', fontWeight: 800, fontSize: 13.5, padding: 12, borderRadius: 13, cursor: 'pointer' }}>
+              🧪 Explorar demo · sin cuenta
+            </button>
+            <div style={{ textAlign: 'center', fontSize: 11, color: '#B6BFCC', fontWeight: 600, marginTop: 7, lineHeight: 1.4 }}>Datos ficticios, solo en tu navegador. No se toca ninguna cuenta real.</div>
           </>
         )}
       </div>

@@ -216,13 +216,17 @@ export function totalsByCurrency(state, ids) {
 
 // ===== Modelo centrado en personas (estilo Splitwise) =====
 
-// Personas únicas con las que compartís gastos (en cualquier grupo no-personal), sin vos.
+// Personas únicas con las que compartís gastos (en cualquier grupo no-personal ACTIVO), sin vos.
+// Archivar oculta de la lista: si todos los espacios en común con alguien están archivados, no aparece.
+// (Su saldo igual sigue contando en los totales: ver `computeFriend`/`totalsByCurrency`.)
 export function friendIds(state) {
   const me = state.me || 'dani'
+  const arch = state.archived || {}
   const seen = []
   for (const gid in state.groups) {
     const g = state.groups[gid]
     if (g.personal) continue
+    if (arch[gid]) continue // espacio archivado: no suma a la lista de amigos
     for (const m of g.members) if (m.id !== me && !seen.includes(m.id)) seen.push(m.id)
   }
   return seen

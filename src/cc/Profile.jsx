@@ -54,11 +54,11 @@ export default function Profile({ s, actions }) {
         {prof.founderNumber && (
           <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 13, borderRadius: 16, padding: '13px 15px', marginBottom: 20, background: 'linear-gradient(135deg,#FDEBAB 0%,#F6CD63 50%,#E7AB34 100%)', border: '1px solid #E7BC5E', boxShadow: '0 4px 14px -8px rgba(199,138,30,.7), inset 0 1px 0 rgba(255,255,255,.55)' }}>
             <span aria-hidden="true" data-cc-shine style={{ position: 'absolute', top: 0, bottom: 0, width: '34%', background: 'linear-gradient(105deg,transparent,rgba(255,255,255,.65),transparent)', animation: 'ccShine 2.6s ease-in-out forwards' }} />
-            <div style={{ position: 'relative', fontSize: 26, lineHeight: 1 }}>🥇</div>
+            <div style={{ position: 'relative', fontSize: 26, lineHeight: 1 }}>🏅</div>
             <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', color: '#8A5A12', textTransform: 'uppercase' }}>Usuario Fundador</div>
-              <div style={{ fontWeight: 800, fontSize: 18, color: '#5C3C0B', letterSpacing: '-0.01em', lineHeight: 1.15 }}>Usuario #{prof.founderNumber}</div>
-              {prof.memberSince && <div style={{ fontSize: 11.5, fontWeight: 600, color: '#9A7426', marginTop: 1 }}>Con nosotros desde {mesAno(prof.memberSince)}</div>}
+              <div style={{ fontWeight: 800, fontSize: 18, color: '#5C3C0B', letterSpacing: '-0.01em', lineHeight: 1.15 }}>Miembro fundador #{prof.founderNumber}</div>
+              {prof.memberSince && <div style={{ fontSize: 11.5, fontWeight: 600, color: '#9A7426', marginTop: 3 }}>Con nosotros desde {mesAno(prof.memberSince)}.</div>}
+              <div style={{ fontSize: 11.5, fontWeight: 600, color: '#9A7426', marginTop: 1 }}>Gracias por acompañarnos desde el comienzo.</div>
             </div>
           </div>
         )}

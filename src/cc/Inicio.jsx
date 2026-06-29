@@ -7,10 +7,11 @@ import { Logo, Chevron, Plus, Archive, EyeToggle, Pin } from './icons'
 export default function Inicio({ s, actions }) {
   const me = s.me || 'dani'
   const allIds = Object.keys(s.groups).filter((id) => id !== 'personal')
-  const activeAll = allIds.filter((id) => !s.archived[id]) // incluye 1:1 (cuentan para el total)
+  const activeIds = allIds.filter((id) => !s.archived[id]) // visibles en las listas (sin archivados)
   // Pestaña Grupos: todo lo que no sea un 1:1 (grupos de 3+, o grupos con nombre de 2 personas).
-  const groupIds = activeAll.filter((id) => !isOneToOne(s, id))
-  const archivedIds = allIds.filter((id) => s.archived[id] && !isOneToOne(s, id))
+  const groupIds = activeIds.filter((id) => !isOneToOne(s, id))
+  const archivedIds = allIds.filter((id) => s.archived[id] && !isOneToOne(s, id)) // grupos archivados
+  const archivedFriendIds = allIds.filter((id) => s.archived[id] && isOneToOne(s, id)) // 1:1 (amigos) archivados
   // Fijados en el inicio (personas y grupos válidos).
   const friendIdList = friendIds(s)
   const validPins = (s.pinned || []).filter((p) => (p.kind === 'group' ? s.groups[p.id] && !s.archived[p.id] : friendIdList.includes(p.id)))
@@ -27,8 +28,9 @@ export default function Inicio({ s, actions }) {
     }
   }
 
-  // Total por moneda (sin conversión). Cada moneda es una línea. Suma todos los espacios (1:1 + grupos).
-  const totals = totalsByCurrency(s, activeAll) // [[cur, net], ...]
+  // Total por moneda (sin conversión). Cada moneda es una línea. Suma TODOS los espacios (1:1 + grupos),
+  // incluidos los archivados: archivar oculta de la lista pero el saldo sigue contando.
+  const totals = totalsByCurrency(s, allIds) // [[cur, net], ...]
   const allPos = totals.every(([, v]) => v >= 0)
   const allNeg = totals.every(([, v]) => v < 0)
   const totalLabel = totals.length === 0 ? 'Estás al día' : allPos ? 'En total, te deben' : allNeg ? 'En total, debés' : 'Tu saldo'
@@ -80,10 +82,10 @@ export default function Inicio({ s, actions }) {
               <span style={{ color: '#7C3AED' }}>Claras</span>
             </span>
             {prof.founderNumber && (
-              <div onClick={actions.openProfile} title="Usuario fundador" style={{ position: 'relative', overflow: 'hidden', display: 'flex', width: 'fit-content', alignItems: 'center', gap: 6, marginTop: 4, padding: '4px 13px 4px 8px', borderRadius: 999, background: 'linear-gradient(135deg,#FDEBAB 0%,#F4C75A 48%,#E3A52E 100%)', border: '1px solid #E7BC5E', boxShadow: '0 2px 7px -3px rgba(199,138,30,.6), inset 0 1px 0 rgba(255,255,255,.55)', cursor: 'pointer' }}>
+              <div onClick={actions.openProfile} title="Miembro fundador" style={{ position: 'relative', overflow: 'hidden', display: 'flex', width: 'fit-content', alignItems: 'center', gap: 6, marginTop: 4, padding: '4px 13px 4px 8px', borderRadius: 999, background: 'linear-gradient(135deg,#FDEBAB 0%,#F4C75A 48%,#E3A52E 100%)', border: '1px solid #E7BC5E', boxShadow: '0 2px 7px -3px rgba(199,138,30,.6), inset 0 1px 0 rgba(255,255,255,.55)', cursor: 'pointer' }}>
                 <span aria-hidden="true" data-cc-shine style={{ position: 'absolute', top: 0, bottom: 0, width: '38%', background: 'linear-gradient(105deg,transparent,rgba(255,255,255,.7),transparent)', animation: 'ccShine 2.4s ease-in-out forwards' }} />
                 <span style={{ position: 'relative', fontSize: 12 }}>🥇</span>
-                <span style={{ position: 'relative', fontSize: 11, fontWeight: 800, color: '#7A4710', letterSpacing: '-0.01em' }}>Usuario fundador #{prof.founderNumber}</span>
+                <span style={{ position: 'relative', fontSize: 11, fontWeight: 800, color: '#7A4710', letterSpacing: '-0.01em' }}>Miembro fundador #{prof.founderNumber}</span>
               </div>
             )}
           </div>
@@ -231,6 +233,18 @@ export default function Inicio({ s, actions }) {
                 <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 600 }}>Se crea un espacio 1:1 al instante</div>
               </div>
             </div>
+
+            {archivedFriendIds.length > 0 && (
+              <div
+                onClick={actions.openArchived}
+                style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', borderRadius: 16, background: '#F4F6FA', cursor: 'pointer', marginTop: 2 }}
+              >
+                <div style={{ width: 36, height: 36, borderRadius: 11, background: '#E7EAF1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Archive /></div>
+                <div style={{ flex: 1, fontWeight: 800, fontSize: 14.5, color: '#475569' }}>Amigos archivados</div>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#94A3B8', background: '#fff', padding: '3px 9px', borderRadius: 999 }}>{archivedFriendIds.length}</span>
+                <Chevron />
+              </div>
+            )}
           </>
         ) : (
           <>
