@@ -139,6 +139,16 @@ function ViewMenu({ s, actions }) {
             {s.view === it.view && <Check size={16} />}
           </div>
         ))}
+        {/* Sin categorizar: vista GLOBAL (todos los gastos sin categoría de todos lados) */}
+        <div style={{ height: 1, background: '#F1F4F9', margin: '4px 8px' }} />
+        <div onClick={actions.openUncat} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 11px', borderRadius: 13, cursor: 'pointer' }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: '#FCEEF4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🏷️</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#0B1220' }}>Sin categorizar</div>
+            <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 600 }}>Recategorizá en lote · todos</div>
+          </div>
+          <Chevron size={16} />
+        </div>
         {!s.groups[s.groupId].personal && (() => {
           const pk = peer ? 'person' : 'group'
           const pidv = peer ? peer.id : s.groupId

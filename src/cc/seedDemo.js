@@ -80,6 +80,9 @@ export function makeDemoState() {
         { id: 'dp2', date: '2026-06-09', currency: 'ARS', categoryId: 'transporte', desc: 'Carga SUBE', amount: 6000, payerId: 'alex', mode: 'group' },
         { id: 'dp3', date: '2026-06-16', currency: 'ARS', categoryId: 'ocio', desc: 'Libro', amount: 18500, payerId: 'alex', mode: 'group' },
         { id: 'dp4', date: '2026-06-24', currency: 'ARS', categoryId: 'salud', desc: 'Farmacia', amount: 9300, payerId: 'alex', mode: 'group' },
+        // Sin categorizar (para la pantalla de recategorización): dos "Edemsa" se agrupan juntos.
+        { id: 'dp5', date: '2026-06-21', currency: 'ARS', categoryId: 'sincat', desc: 'Edemsa', amount: 48000, payerId: 'alex', mode: 'group' },
+        { id: 'dp6', date: '2026-05-19', currency: 'ARS', categoryId: 'sincat', desc: 'Edemsa', amount: 45000, payerId: 'alex', mode: 'group' },
       ],
       depto: [
         // Saldado ("pagaron ambos"): no genera deuda, pero igual es consumo → debe verse en "Mis gastos".
@@ -89,6 +92,7 @@ export function makeDemoState() {
         { id: 'dd3', date: '2026-06-12', currency: 'ARS', categoryId: 'super', desc: 'Compra grande', amount: 64500, payerId: 'mati', mode: 'group' },
         { id: 'dd4', date: '2026-06-20', currency: 'ARS', categoryId: 'super', desc: 'Verdulería', amount: 18000, payerId: 'alex', mode: 'group' },
         { id: 'dd5', date: '2026-06-25', currency: 'ARS', categoryId: 'servicios', desc: 'Internet', amount: 22000, payerId: 'sofi', mode: 'group' },
+        { id: 'dd6', date: '2026-06-14', currency: 'ARS', categoryId: 'sincat', desc: 'Bazar chino', amount: 12000, payerId: 'mati', mode: 'group' },
       ],
       viaje: [
         { id: 'dv1', date: '2026-06-15', currency: 'ARS', categoryId: 'viaje', desc: 'Seña cabaña', amount: 90000, payerId: 'alex', mode: 'group' },

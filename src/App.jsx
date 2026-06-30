@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
 import { makeDemoState } from './cc/seedDemo'
 import Welcome from './cc/Welcome'
-import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith } from './cc/logic'
+import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith, normDesc } from './cc/logic'
 import { todayISO, nowTime, fmtDateFull } from './cc/dates'
 import Inicio from './cc/Inicio'
 import Chat from './cc/Chat'
@@ -10,12 +10,13 @@ import EditSheet from './cc/EditSheet'
 import Profile from './cc/Profile'
 import Archived from './cc/Archived'
 import NewGroup from './cc/NewGroup'
+import Uncategorized from './cc/Uncategorized'
 import Friend, { AddFriend } from './cc/Friend'
 import { MethodDetail, MonthDetail } from './cc/Detail'
 import { Logo } from './cc/icons'
 import Login from './Login'
 import { supabase } from './supabase'
-import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency, cloudSetArchived, cloudDeleteGroup } from './cloud'
+import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency, cloudSetArchived, cloudDeleteGroup, cloudSaveCatMemory } from './cloud'
 import { setAmountsHidden, CURRENCIES } from './cc/logic'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
@@ -142,7 +143,7 @@ const DEMO_KEY = 'cuentas-claras:demo-v1' // datos ficticios del modo demo (apar
 const DEMO_FLAG = 'cc-demo' // '1' = el visitante entró por "Explorar demo"
 const WELCOME_KEY = 'cc-welcomed:v1' // '1' = ya vio el onboarding de bienvenida (por dispositivo)
 const HIDE_KEY = 'cuentas-claras:hideAmounts' // preferencia por dispositivo (no se sincroniza)
-const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'pinned', 'aliases', 'histSel']
+const DATA_KEYS = ['groups', 'splits', 'splitLog', 'splitMeta', 'ledgers', 'payments', 'threads', 'categories', 'methods', 'profile', 'archived', 'pinned', 'aliases', 'histSel', 'catMemory']
 
 // ¿Estamos en modo demo? Se activa con el botón "Explorar demo" del login o con ?demo=1 en la URL
 // (link directo para compartir). El param deja la bandera puesta para que sobreviva a las recargas.
@@ -225,6 +226,7 @@ export default function App() {
   const msgSyncRef = useRef(null) // snapshot de mensajes ya sincronizados
   const aliasSyncRef = useRef(false) // ya se tomó el snapshot inicial de aliases
   const curSyncRef = useRef(false) // ya se tomó el snapshot inicial de la moneda por defecto
+  const catMemSyncRef = useRef(false) // ya se tomó el snapshot inicial de la memoria de categorías
   const typingChanRef = useRef(null) // canal de "escribiendo…" (broadcast) del grupo activo
   const typingTimerRef = useRef(null) // limpia el cartel de "escribiendo…" tras unos segundos
   const lastTypingSentRef = useRef(0) // throttle de envío de "escribiendo…"
@@ -392,6 +394,13 @@ export default function App() {
     if (!curSyncRef.current) { curSyncRef.current = true; return } // primera vez tras cargar: solo snapshot
     cloudSaveCurrency(session.user.id, s.profile.currency)
   }, [s.profile.currency, dataReady])
+
+  // espejo de la memoria de categorías → perfil en Supabase (te sigue entre dispositivos).
+  useEffect(() => {
+    if (!dataReady || !session?.user) { catMemSyncRef.current = false; return }
+    if (!catMemSyncRef.current) { catMemSyncRef.current = true; return } // primera vez tras cargar: solo snapshot
+    cloudSaveCatMemory(session.user.id, s.catMemory)
+  }, [s.catMemory, dataReady])
 
   // Moneda elegida al crear la cuenta (Login la deja en localStorage porque al hacer signup
   // todavía no hay datos cargados): se aplica una vez al perfil y el espejo de arriba la persiste.
@@ -956,6 +965,37 @@ export default function App() {
         return { methods: [...prev.methods, { id: 'pm' + Date.now(), name: nm, icon: '💳' }], addingProfMethod: false, newProfMethodName: '' }
       }),
 
+    // ---- sin categorizar (recategorización global en lote + memoria) ----
+    openUncat: () => set({ screen: 'uncat', uncatSel: [], uncatPick: false, menuOpen: false, configOpen: false }),
+    toggleUncatSel: (key) => set((prev) => { const sel = prev.uncatSel || []; return { uncatSel: sel.includes(key) ? sel.filter((k) => k !== key) : [...sel, key] } }),
+    setUncatSel: (keys) => set({ uncatSel: keys }),
+    clearUncatSel: () => set({ uncatSel: [] }),
+    openUncatPick: () => set({ uncatPick: true }),
+    closeUncatPick: () => set({ uncatPick: false }),
+    // Asigna una categoría a los gastos seleccionados (en cualquier grupo/personal) y RECUERDA
+    // el mapeo descripción→categoría para autocategorizar gastos futuros con la misma descripción.
+    assignUncatCategory: (catId) =>
+      set((prev) => {
+        const sel = new Set(prev.uncatSel || [])
+        if (!sel.size || !catId) return { uncatPick: false }
+        const ledgers = { ...prev.ledgers }
+        const mem = { ...(prev.catMemory || {}) }
+        const touched = {}
+        for (const key of sel) {
+          const i = key.indexOf('|')
+          const g = key.slice(0, i), id = key.slice(i + 1)
+          const led = ledgers[g] || []
+          const idx = led.findIndex((e) => e.id === id)
+          if (idx < 0) continue
+          if (!touched[g]) { ledgers[g] = [...led]; touched[g] = true }
+          const e = led[idx]
+          ledgers[g][idx] = { ...e, categoryId: catId, editedBy: prev.profile.name, editedAt: todayISO() }
+          const k = normDesc(e.desc)
+          if (k) mem[k] = catId
+        }
+        return { ledgers, catMemory: mem, uncatSel: [], uncatPick: false }
+      }),
+
     // ---- archivados ----
     onGroupQuery: (v) => set({ groupQuery: v }),
     restoreGroup: (id) => set((prev) => { const a = { ...prev.archived }; delete a[id]; return { archived: a } }),
@@ -1065,6 +1105,7 @@ export default function App() {
       {s.screen === 'friend' && <Friend s={s} actions={actions} />}
       {s.screen === 'profile' && <Profile s={s} actions={actions} />}
       {s.screen === 'archived' && <Archived s={s} actions={actions} />}
+      {s.screen === 'uncat' && <Uncategorized s={s} actions={actions} />}
       {s.screen === 'newgroup' && <NewGroup s={s} actions={actions} />}
       {s.screen === 'methodDetail' && <MethodDetail s={s} actions={actions} />}
       {s.screen === 'monthDetail' && <MonthDetail s={s} actions={actions} />}

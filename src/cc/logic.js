@@ -579,6 +579,12 @@ export function uncatCategory(state) {
   return (state.categories || []).find((c) => c.id === UNCAT_ID) || { id: UNCAT_ID, name: 'Sin categoría', icon: '🏷️' }
 }
 
+// Normaliza una descripción para la memoria de categorías: minúsculas, sin acentos, sin espacios extra.
+// Así "Edemsa", "edemsa" y "édemsa" cuentan como la misma.
+export function normDesc(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+}
+
 export function resolveCat(state, gid, t) {
   for (const c of state.categories) {
     if (c.id === UNCAT_ID) continue // no auto-asignar el bucket por su nombre
@@ -587,8 +593,34 @@ export function resolveCat(state, gid, t) {
   // Sin coincidencia → "Sin categoría", conservando el texto como descripción del movimiento.
   const label = extractCat(state, gid, t)
   const desc = label.charAt(0).toUpperCase() + label.slice(1)
+  // Memoria: si ya categorizaste manualmente un gasto con esta descripción, reusamos esa categoría.
+  const remembered = (state.catMemory || {})[normDesc(desc)]
+  if (remembered) {
+    const c = catById(state, remembered)
+    if (c && c.id !== UNCAT_ID) return { id: c.id, name: c.name, icon: c.icon, desc }
+  }
   const uc = uncatCategory(state)
   return { id: uc.id, name: uc.name, icon: uc.icon, desc }
+}
+
+// Todos los gastos SIN categorizar (bucket 'sincat' o categoría inexistente), de TODOS lados
+// (Mis gastos + grupos + 1:1), para la pantalla de recategorización global. Excluye futuros y transferencias.
+export function uncategorizedRows(state) {
+  const me = state.me || 'dani'
+  const valid = new Set((state.categories || []).map((c) => c.id))
+  const out = []
+  for (const gid in state.groups) {
+    const g = state.groups[gid]
+    const gname = g.personal ? 'Personal' : isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
+    ;(state.ledgers[gid] || []).forEach((e) => {
+      if (e.kind === 'transfer') return
+      const uncat = !e.categoryId || e.categoryId === UNCAT_ID || !valid.has(e.categoryId)
+      if (!uncat) return
+      const payer = g.personal ? null : memberById(state, gid, e.payerId)
+      out.push({ id: e.id, gid, personal: !!g.personal, gname, desc: e.desc || 'Gasto', amount: e.amount, cur: e.currency || 'ARS', date: e.date, future: !!e.future, payerId: e.payerId, payerShort: payer ? payer.short : null, isMine: e.payerId === me })
+    })
+  }
+  return out.sort(byRecency)
 }
 
 const MES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']

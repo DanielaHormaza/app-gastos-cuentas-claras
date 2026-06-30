@@ -83,6 +83,7 @@ export function makeInitialState() {
     archived: {},
     pinned: [], // hasta 2 grupos fijados en el inicio (gids)
     aliases: {}, // cómo VOS llamás a cada persona (member_key → alias), por dispositivo
+    catMemory: {}, // memoria de categorización manual: descripción normalizada → categoryId (recuerda para el futuro)
     payments: { pareja: [], asado: [], personal: [] },
     threads: {
       pareja: [

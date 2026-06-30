@@ -96,6 +96,12 @@ export async function cloudSaveCurrency(userId, currency) {
   if (error) console.error('[saveCurrency]', error.message)
 }
 
+// Guarda la memoria de categorización (descripción → categoría) en el perfil; te sigue entre dispositivos.
+export async function cloudSaveCatMemory(userId, catMemory) {
+  const { error } = await supabase.from('profiles').update({ cat_memory: catMemory || {} }).eq('id', userId)
+  if (error) console.error('[saveCatMemory]', error.message)
+}
+
 // Lee todo lo del usuario desde Supabase y lo arma en la forma del estado `s`.
 // userId: auth.user.id del logueado (para detectar quién soy → state.me).
 export async function loadCloudState(userId) {
@@ -106,7 +112,7 @@ export async function loadCloudState(userId) {
     supabase.from('split_history').select('*').order('from_date', { ascending: true }),
     supabase.from('expenses').select('*'),
     supabase.from('messages').select('*'),
-    supabase.from('profiles').select('founder_number, created_at, aliases, currency').eq('id', userId).maybeSingle(),
+    supabase.from('profiles').select('founder_number, created_at, aliases, currency, cat_memory').eq('id', userId).maybeSingle(),
   ])
   const bad = [groupsR, membersR, catsR, splitsR, expR, msgR].find((r) => r.error)
   if (bad) throw new Error(bad.error.message)
@@ -216,6 +222,7 @@ export async function loadCloudState(userId) {
     me,
     profile: { ...base.profile, name: meName, founderNumber: profR.data?.founder_number || null, memberSince: profR.data?.created_at || null, currency: profR.data?.currency || 'ARS' },
     aliases: profR.data?.aliases || {},
+    catMemory: profR.data?.cat_memory || {},
     groups,
     splits,
     splitLog,
