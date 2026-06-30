@@ -1,5 +1,9 @@
 import { supabase } from './supabase'
 import { makeInitialState } from './cc/initialState'
+import { fmtDateFull } from './cc/dates'
+
+// La nube guarda created_at como timestamp ISO ("2026-06-21T18:00:..."); lo mostramos lindo ("21/jun/26").
+const fmtCreated = (ts) => (ts ? fmtDateFull(String(ts).slice(0, 10)) : undefined)
 
 // ----- Escritura -----
 const toRow = (e, gid) => ({
@@ -113,7 +117,7 @@ export async function loadCloudState(userId) {
   const groups = {}
   const archived = {} // gid → true (archivado, persistido en la columna groups.archived)
   for (const g of groupsR.data) {
-    groups[g.id] = { id: g.id, name: g.name, initial: g.initial, gradient: g.gradient, description: g.description, personal: !!g.personal, isGroup: !!g.is_group, direct: !!g.direct, eventDate: g.event_date || undefined, createdAt: g.created_at, members: [] }
+    groups[g.id] = { id: g.id, name: g.name, initial: g.initial, gradient: g.gradient, description: g.description, personal: !!g.personal, isGroup: !!g.is_group, direct: !!g.direct, eventDate: g.event_date || undefined, createdAt: fmtCreated(g.created_at), members: [] }
     if (g.archived) archived[g.id] = true
   }
   let me = 'dani'

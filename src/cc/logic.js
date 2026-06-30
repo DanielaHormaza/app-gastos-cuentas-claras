@@ -146,6 +146,25 @@ export function myShare(state, gid, e) {
   return shareFor(state, gid, e, state.me || 'dani')
 }
 
+// Fracción de CONSUMO de un miembro (para "Mis gastos"). A diferencia de shareFor/myShare,
+// un gasto SALDADO ("pagaron ambos") IGUAL cuenta: cada uno consumió su parte aunque no haya deuda.
+// Por eso un alquiler saldado debe seguir apareciendo en "Mis gastos" con tu parte.
+export function consumeShareFor(state, gid, e, memberId) {
+  if (e.mode !== 'settled') return shareFor(state, gid, e, memberId)
+  // saldado → mismo reparto que el modo group (renormalizado, sin excluidos)
+  const members = state.groups[gid].members
+  const excluded = e.excluded || []
+  if (excluded.includes(memberId)) return 0
+  const shares = splitAt(state, gid, e.date)
+  const incl = members.filter((m) => !excluded.includes(m.id))
+  const total = incl.reduce((a, m) => a + (shares[m.id] || 0), 0)
+  if (total <= 0) return incl.some((m) => m.id === memberId) ? 1 / incl.length : 0
+  return (shares[memberId] || 0) / total
+}
+export function consumeShare(state, gid, e) {
+  return consumeShareFor(state, gid, e, state.me || 'dani')
+}
+
 // Neto del grupo POR MONEDA (sin conversión). nets[cur] > 0 = te deben.
 // Excluye gastos futuros (cuotas por venir): no afectan el saldo hasta su mes.
 export function compute(state, gid) {
@@ -327,8 +346,8 @@ export function personalSpent(state, monthKey = null) {
     if (g.personal) continue
     ;(state.ledgers[gid] || []).forEach((e) => {
       if (e.future || e.kind === 'transfer' || !inMonth(e)) return
-      const share = myShare(state, gid, e)
-      if (share === null || share <= 0) return
+      const share = consumeShare(state, gid, e)
+      if (!share || share <= 0) return
       add(e.currency || 'ARS', e.amount * share)
     })
   }
@@ -345,8 +364,8 @@ export function myShareExpenses(state) {
     const gname = isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
     ;(state.ledgers[gid] || []).forEach((e) => {
       if (e.future || e.kind === 'transfer') return
-      const share = myShare(state, gid, e)
-      if (share === null) return
+      const share = consumeShare(state, gid, e)
+      if (!share || share <= 0) return
       const mine = e.amount * share
       if (mine < 1) return
       const cat = catById(state, e.categoryId)
@@ -374,8 +393,8 @@ export function personalFeed(state, future = false) {
     const gname = isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
     ;(state.ledgers[gid] || []).forEach((e) => {
       if (!!e.future !== future || e.kind === 'transfer') return
-      const share = myShare(state, gid, e)
-      if (share === null) return
+      const share = consumeShare(state, gid, e)
+      if (!share || share <= 0) return
       const mine = e.amount * share
       if (mine < 1) return
       const cat = catById(state, e.categoryId)

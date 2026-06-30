@@ -811,7 +811,9 @@ function PersonalHistoricos({ s, actions }) {
   const histMax = Math.max(1, ...months.map((m) => m.total))
   const selKey = s.histSel.personal || cur
   const sel = months.find((m) => m.key === selKey) || months[months.length - 1]
-  const selRows = rows.filter((r) => monthKeyOf(r.date) === sel.key).sort(byRecency)
+  // Al buscar, mostramos las coincidencias de TODOS los meses (no solo el mes seleccionado).
+  const searching = !!(s.moveQuery || '').trim()
+  const selRows = (searching ? [...rows] : rows.filter((r) => monthKeyOf(r.date) === sel.key)).sort(byRecency)
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -836,8 +838,8 @@ function PersonalHistoricos({ s, actions }) {
             })}
           </div>
         </div>
-        <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '4px 4px 0' }}>MOVIMIENTOS DE {monthShortLabel(sel.key).toUpperCase()}</div>
-        {selRows.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '10px 0' }}>Sin movimientos ese mes.</div>}
+        <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', padding: '4px 4px 0' }}>{searching ? 'RESULTADOS' : 'MOVIMIENTOS DE ' + monthShortLabel(sel.key).toUpperCase()}</div>
+        {selRows.length === 0 && <div style={{ textAlign: 'center', fontSize: 12.5, color: '#B6BFCC', fontWeight: 700, padding: '10px 0' }}>{searching ? 'No se encontraron movimientos.' : 'Sin movimientos ese mes.'}</div>}
         {selRows.map((r) => <MgRow key={r.gid + r.id} s={s} r={r} actions={actions} />)}
       </div>
     </div>

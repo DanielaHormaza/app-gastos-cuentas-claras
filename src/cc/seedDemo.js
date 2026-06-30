@@ -82,6 +82,8 @@ export function makeDemoState() {
         { id: 'dp4', date: '2026-06-24', currency: 'ARS', categoryId: 'salud', desc: 'Farmacia', amount: 9300, payerId: 'alex', mode: 'group' },
       ],
       depto: [
+        // Saldado ("pagaron ambos"): no genera deuda, pero igual es consumo → debe verse en "Mis gastos".
+        { id: 'dd0', date: '2026-05-05', currency: 'ARS', categoryId: 'alquiler', desc: 'Alquiler mayo', amount: 480000, payerId: 'alex', mode: 'settled' },
         { id: 'dd1', date: '2026-06-05', currency: 'ARS', categoryId: 'alquiler', desc: 'Alquiler junio', amount: 480000, payerId: 'alex', mode: 'group' },
         { id: 'dd2', date: '2026-06-08', currency: 'ARS', categoryId: 'servicios', desc: 'Luz y gas', amount: 32000, payerId: 'sofi', mode: 'group' },
         { id: 'dd3', date: '2026-06-12', currency: 'ARS', categoryId: 'super', desc: 'Compra grande', amount: 64500, payerId: 'mati', mode: 'group' },
