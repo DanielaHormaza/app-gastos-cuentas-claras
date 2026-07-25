@@ -59,6 +59,23 @@ function Fields({ s, g, dr, actions, splitLabels }) {
         <div onClick={actions.closeEdit} style={{ width: 30, height: 30, borderRadius: '50%', background: '#F1F4F9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Close size={15} color="#64748B" /></div>
       </div>
 
+      <div style={label}>NOMBRE</div>
+      <input
+        value={dr.desc || ''}
+        onChange={(e) => actions.onDesc(e.target.value)}
+        placeholder={cat.name}
+        style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '11px 13px', fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#0B1220', outline: 'none', marginBottom: 18, background: '#fff' }}
+      />
+
+      <div style={label}>DESCRIPCIÓN <span style={{ color: '#C3CCDA' }}>(opcional)</span></div>
+      <textarea
+        value={dr.note || ''}
+        onChange={(e) => actions.onNote(e.target.value)}
+        placeholder="Notas o detalle del gasto…"
+        rows={2}
+        style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '11px 13px', fontFamily: 'inherit', fontWeight: 600, fontSize: 14, color: '#334155', outline: 'none', marginBottom: 18, background: '#fff', resize: 'vertical' }}
+      />
+
       <div style={label}>CATEGORÍA</div>
       <div onClick={() => actions.openPanel('cat')} style={{ ...fieldBox, padding: '9px 11px', marginBottom: 18 }}>
         <div style={{ width: 30, height: 30, borderRadius: 9, background: '#EAF8F3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>{cat.icon}</div>

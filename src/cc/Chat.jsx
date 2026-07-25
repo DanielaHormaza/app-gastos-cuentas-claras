@@ -1,5 +1,5 @@
 import { useEffect, useRef, Fragment } from 'react'
-import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, personalFeed, curList, CURRENCIES, monthShortLabel, monthLongLabel, TONE } from './logic'
+import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, personalFeed, curList, isUpcoming, CURRENCIES, monthShortLabel, monthLongLabel, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin, Search } from './icons'
 import { Futuros, Historicos } from './GroupViews'
@@ -424,7 +424,7 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
     let ex = m.exp
     if (!ex && m.expId) {
       const le = (s.ledgers[gid] || []).find((x) => x.id === m.expId)
-      if (le) ex = { amount: le.amount, categoryId: le.categoryId, payerId: le.payerId, mode: le.mode }
+      if (le) ex = { amount: le.amount, categoryId: le.categoryId, payerId: le.payerId, mode: le.mode, desc: le.desc, currency: le.currency, date: le.date }
     }
     const e = ex ? mkExp(ex) : null
     return (
@@ -583,7 +583,7 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
   const byDay = {}
   const dayDate = {}
   ;(s.ledgers[gid] || [])
-    .filter((e) => !e.future && catMatch(s.catFilter, e) && curMatch(s.curFilter, e) && payerMatch(s.payerFilter, e) && textMatch(s, gid, e, s.moveQuery))
+    .filter((e) => !isUpcoming(e) && catMatch(s.catFilter, e) && curMatch(s.curFilter, e) && payerMatch(s.payerFilter, e) && textMatch(s, gid, e, s.moveQuery))
     .slice()
     .sort(byRecency)
     .forEach((e) => {
@@ -860,8 +860,15 @@ function PersonalHistoricos({ s, actions }) {
  * cada fila con el chip de su grupo de origen. Tocar un gasto del propio 1:1 lo edita;
  * uno de otro grupo salta a los movimientos de ese grupo para editarlo ahí. */
 function FriendLedger({ s, peer, lines, actions }) {
-  const { order, byDay } = friendMovementsByDay(s, peer.id)
   const fc = computeFriend(s, peer.id)
+  const { order, byDay } = friendMovementsByDay(s, peer.id, s.catFilter, s.moveQuery, s.curFilter, s.payerFilter)
+  // Opciones de filtro presentes entre lo compartido con esta persona (cada uno se muestra solo si aplica).
+  const cats = s.categories.filter((c) => fc.expenses.some((e) => e.categoryId === c.id))
+  const currencies = CURRENCIES.filter((cu) => fc.expenses.some((e) => (e.cur || 'ARS') === cu))
+  const payerIds = new Set(fc.expenses.filter((e) => !e.transfer && e.payerId).map((e) => e.payerId))
+  const meM = memberById(s, s.groupId, s.me || 'dani')
+  const payers = [meM, peer].filter((m) => m && payerIds.has(m.id))
+  const filtering = (s.catFilter && s.catFilter.length) || s.moveQuery || (s.curFilter && s.curFilter !== 'all') || (s.payerFilter && s.payerFilter !== 'all')
   const netArs = fc.nets.ARS || 0
   const arrow = netArs > 1 ? '↑' : netArs < -1 ? '↓' : '='
   const arrowColor = netArs > 1 ? TONE.pos : netArs < -1 ? TONE.neg : '#94A3B8'
@@ -884,10 +891,13 @@ function FriendLedger({ s, peer, lines, actions }) {
         </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {fc.expenses.length > 0 && (
+          <Filters cats={cats} catFilter={s.catFilter} onCat={actions.setCatFilter} query={s.moveQuery} onQuery={actions.setMoveQuery} cur={s.curFilter} onCur={actions.setCurFilter} currencies={currencies} payer={s.payerFilter} onPayer={actions.setPayerFilter} payers={payers} />
+        )}
         {order.length === 0 && (
           <div style={{ textAlign: 'center', padding: '28px 16px', color: '#B6BFCC' }}>
             <div style={{ fontSize: 26, marginBottom: 8 }}>🤝</div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#64748B' }}>Sin gastos compartidos con {peer.short} aún</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#64748B' }}>{filtering ? 'Sin movimientos que coincidan con los filtros' : 'Sin gastos compartidos con ' + peer.short + ' aún'}</div>
           </div>
         )}
         {order.map((k) => (

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { compute, fmt, buildHistory, catById, memberById, monthLongLabel, monthData, ledgerMonths, buildCsv, groupCategories, groupCurrencies, groupPayers, curMatch, catMatch, payerMatch, textMatch, CURRENCIES } from './logic'
+import { compute, fmt, buildHistory, catById, memberById, monthLongLabel, monthData, ledgerMonths, buildCsv, groupCategories, groupCurrencies, groupPayers, curMatch, catMatch, payerMatch, textMatch, isUpcoming, CURRENCIES } from './logic'
 import { monthKeyOf } from './dates'
 import { METHOD_COLORS } from './initialState'
 import { Chevron, ChevronDown } from './icons'
@@ -26,7 +26,7 @@ export function Futuros({ s, actions }) {
   const payerFilter = s.payerFilter || 'all'
   const catFilter = s.catFilter
   const q = s.moveQuery
-  const allFut = (s.ledgers[gid] || []).filter((e) => e.future).slice().sort((a, b) => (a.date < b.date ? -1 : 1))
+  const allFut = (s.ledgers[gid] || []).filter((e) => isUpcoming(e)).slice().sort((a, b) => (a.date < b.date ? -1 : 1))
   // categorías/monedas/pagadores presentes entre los gastos futuros (cada filtro se muestra solo si aplica)
   const futCats = s.categories.filter((ct) => allFut.some((e) => e.categoryId === ct.id))
   const futCurrencies = CURRENCIES.filter((cu) => allFut.some((e) => (e.currency || 'ARS') === cu))

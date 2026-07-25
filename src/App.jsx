@@ -3,7 +3,7 @@ import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
 import { makeDemoState } from './cc/seedDemo'
 import Welcome from './cc/Welcome'
 import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith, normDesc } from './cc/logic'
-import { todayISO, nowTime, fmtDateFull } from './cc/dates'
+import { todayISO, nowTime, fmtDateFull, monthKeyOf } from './cc/dates'
 import Inicio from './cc/Inicio'
 import Chat from './cc/Chat'
 import EditSheet from './cc/EditSheet'
@@ -20,7 +20,7 @@ import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCate
 import { setAmountsHidden, CURRENCIES } from './cc/logic'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
-const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null), JSON.stringify(e.excluded || [])].join('|')
+const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.note, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null), JSON.stringify(e.excluded || [])].join('|')
 // Snapshot id→{e,gid,fp} de todos los movimientos (para el espejo de sincronización).
 const ledSnapshot = (ledgers) => {
   const map = {}
@@ -55,7 +55,7 @@ const msgSnapshot = (threads) => {
   const map = {}
   for (const gid in threads) {
     if (gid === 'personal') continue
-    for (const m of threads[gid]) if (MSG_SYNC_KINDS.has(m.kind)) map[m.id] = { m, gid, fp: msgFp(m) }
+    for (const m of threads[gid]) if (MSG_SYNC_KINDS.has(m.kind) && !m._hist) map[m.id] = { m, gid, fp: msgFp(m) }
   }
   return map
 }
@@ -82,10 +82,43 @@ const applyEdit = (prev, patch) => {
   const draft = { ...prev.draft, ...patch, editedBy: prev.profile.name, editedAt: todayISO() }
   const l = (prev.ledgers[g] || []).map((it) =>
     it.id === prev.editId
-      ? { ...it, categoryId: draft.categoryId, amount: draft.amount, payerId: draft.payerId, methodId: draft.methodId !== undefined ? draft.methodId : it.methodId || null, mode: draft.mode || 'group', currency: draft.currency || 'ARS', excluded: draft.excluded || [], editedBy: draft.editedBy, editedAt: draft.editedAt }
+      ? { ...it, categoryId: draft.categoryId, amount: draft.amount, payerId: draft.payerId, desc: draft.desc !== undefined ? (draft.desc || undefined) : it.desc, note: draft.note !== undefined ? (draft.note || undefined) : it.note, methodId: draft.methodId !== undefined ? draft.methodId : it.methodId || null, mode: draft.mode || 'group', currency: draft.currency || 'ARS', excluded: draft.excluded || [], editedBy: draft.editedBy, editedAt: draft.editedAt }
       : it,
   )
   return { draft, ledgers: { ...prev.ledgers, [g]: l } }
+}
+
+// Suma `n` meses a una fecha ISO conservando el día (con desborde natural del Date).
+const addMonthsISO = (iso, n) => {
+  const [y, m, d] = (iso || todayISO()).split('-').map(Number)
+  const dt = new Date(y, (m - 1) + n, d)
+  const pad = (x) => ('0' + x).slice(-2)
+  return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate())
+}
+
+// Construye las entradas de un gasto interpretado: una sola, o N cuotas (una por mes) si exp.cuotas>1.
+// Convención: el monto es POR CUOTA ("3 cuotas de $180.000" = 180.000 cada una). La cuota cuyo mes
+// ya llegó NO se marca `future` (cuenta desde ya); las de meses siguientes sí (isUpcoming las corre solo).
+const buildExpenseEntries = (exp, baseId, day, tm, createdBy) => {
+  const date0 = exp.date || day
+  const curMonth = monthKeyOf(day)
+  const common = {
+    categoryId: exp.categoryId, payerId: exp.payerId, note: exp.note || undefined,
+    mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy,
+  }
+  const n = exp.cuotas && exp.cuotas > 1 ? exp.cuotas : 1
+  if (n === 1) return [{ id: 'e' + baseId, date: date0, amount: exp.amount, time: tm, desc: exp.desc || undefined, ...common }]
+  const base = exp.desc || exp.catName || 'Gasto'
+  const out = []
+  for (let i = 0; i < n; i++) {
+    const d = addMonthsISO(date0, i)
+    out.push({
+      id: 'e' + baseId + '_' + (i + 1), date: d, amount: exp.amount, time: tm,
+      desc: base + ' cuota ' + (i + 1) + '/' + n, cuota: { n: i + 1, total: n },
+      future: monthKeyOf(d) > curMonth, ...common,
+    })
+  }
+  return out
 }
 
 // Miembro "yo" para armar grupos nuevos: el que ya existe en algún grupo, o uno derivado del perfil.
@@ -511,7 +544,7 @@ export default function App() {
 
   // Abre la hoja de edición para un gasto del ledger.
   const openEdit = (e) =>
-    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS', excluded: e.excluded || [], createdBy: e.createdBy, editedBy: e.editedBy, editedAt: e.editedAt }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
+    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, desc: e.desc || '', note: e.note || '', methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS', excluded: e.excluded || [], createdBy: e.createdBy, editedBy: e.editedBy, editedAt: e.editedAt }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
 
   // Aplica un nuevo reparto registrando el régimen anterior "hasta hoy": el nuevo % rige desde hoy.
   // Editar varias veces el mismo día NO crea regímenes extra (sólo el primero del día archiva el anterior).
@@ -704,10 +737,10 @@ export default function App() {
                 const sids = Object.keys(prev.splits[g] || {})
                 if (sids.length >= 2) splits = { ...splits, [g]: { [sids[0]]: exp.split.a, [sids[1]]: exp.split.b } }
               }
-              const expId = 'e' + id
-              const entry = { id: expId, date: exp.date || day, categoryId: catId, amount: exp.amount, payerId: exp.payerId, desc: exp.desc, time: tm, mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
-              ledger = [...ledger, entry]
-              app = { id: 'a' + id, role: 'app', kind: 'saved', expId, exp: { ...exp, categoryId: catId } }
+              // 1 gasto, o N cuotas (una por mes) si se dijo "X cuotas". La tarjeta apunta a la 1ra.
+              const entries = buildExpenseEntries({ ...exp, categoryId: catId }, id, day, tm, prev.profile.name)
+              ledger = [...ledger, ...entries]
+              app = { id: 'a' + id, role: 'app', kind: 'saved', expId: entries[0].id, exp: { ...exp, categoryId: catId } }
             }
           } else if (res.kind === 'payment') app = { id: 'a' + id, role: 'app', kind: 'payment', exp: res.exp }
           else if (res.kind === 'correction') app = { id: 'a' + id, role: 'app', kind: 'correction', cor: res.cor }
@@ -736,8 +769,7 @@ export default function App() {
           catId = 'c' + Date.now()
           cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
         }
-        const expId = 'e' + Date.now()
-        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, desc: exp.desc, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
+        const entries = buildExpenseEntries({ ...exp, categoryId: catId }, Date.now(), todayISO(), nowTime(), prev.profile.name)
         let splits = prev.splits
         if (exp.split) {
           const ids = Object.keys(prev.splits[g] || {})
@@ -745,9 +777,9 @@ export default function App() {
         }
         return {
           categories: cats,
-          ledgers: { ...prev.ledgers, [g]: [...ledger, entry] },
+          ledgers: { ...prev.ledgers, [g]: [...ledger, ...entries] },
           splits,
-          threads: { ...prev.threads, [g]: thread.map((m) => (m.id === id ? { ...m, kind: 'saved', expId, exp: { ...exp, categoryId: catId } } : m)) },
+          threads: { ...prev.threads, [g]: thread.map((m) => (m.id === id ? { ...m, kind: 'saved', expId: entries[0].id, exp: { ...exp, categoryId: catId } } : m)) },
         }
       }),
     forceExp: (id) => {
@@ -775,8 +807,8 @@ export default function App() {
           catId = 'c' + Date.now()
           cats = [...cats, { id: catId, icon: exp.catIcon || '🏷️', name: exp.catName || 'Gasto' }]
         }
-        const expId = 'e' + Date.now()
-        const entry = { id: expId, date: exp.date || todayISO(), categoryId: catId, amount: exp.amount, payerId: exp.payerId, desc: exp.desc, time: nowTime(), mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy: prev.profile.name }
+        const entries = buildExpenseEntries({ ...exp, categoryId: catId }, Date.now(), todayISO(), nowTime(), prev.profile.name)
+        const entry = entries[0]
         let splits = prev.splits
         if (exp.split) {
           const ids = Object.keys(prev.splits[g] || {})
@@ -784,11 +816,11 @@ export default function App() {
         }
         return {
           categories: cats,
-          ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), entry] },
+          ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), ...entries] },
           splits,
-          threads: { ...prev.threads, [g]: thread.map((m) => (m.id === id ? { ...m, kind: 'saved', expId, exp: { ...exp, categoryId: catId } } : m)) },
-          editId: expId,
-          draft: { categoryId: catId, amount: entry.amount, payerId: entry.payerId, methodId: null, mode: entry.mode, currency: entry.currency, createdBy: entry.createdBy },
+          threads: { ...prev.threads, [g]: thread.map((m) => (m.id === id ? { ...m, kind: 'saved', expId: entry.id, exp: { ...exp, categoryId: catId } } : m)) },
+          editId: entry.id,
+          draft: { categoryId: catId, amount: entry.amount, payerId: entry.payerId, desc: entry.desc || '', note: entry.note || '', methodId: null, mode: entry.mode, currency: entry.currency, createdBy: entry.createdBy },
           editPanel: null, catQuery: '', payerQuery: '', methodQuery: '',
         }
       }),
@@ -849,6 +881,8 @@ export default function App() {
       const n = parseInt((v || '').replace(/\D/g, '') || '0', 10)
       set((prev) => applyEdit(prev, { amount: n }))
     },
+    onDesc: (v) => set((prev) => applyEdit(prev, { desc: v })),
+    onNote: (v) => set((prev) => applyEdit(prev, { note: v })),
     onCatQuery: (v) => set({ catQuery: v }),
     setNewCatIcon: (icon) => set({ newCatIcon: icon }),
     pickCat: (id) => set((prev) => ({ ...applyEdit(prev, { categoryId: id }), editPanel: null, catQuery: '', newCatIcon: null })),

@@ -165,8 +165,16 @@ export function consumeShare(state, gid, e) {
   return consumeShareFor(state, gid, e, state.me || 'dani')
 }
 
+// Una entrada "futura" (cuota por venir o gasto fijo programado) solo cuenta como PENDIENTE
+// mientras su mes todavía no llegó. Cuando llega el mes de la cuota, deja de ser "futura" y pasa
+// a contar como un gasto normal (saldo, movimientos diarios y "Mis gastos") de forma automática,
+// sin necesidad de re-cargarla. Ej: la cuota 3/6 con fecha 2026-07-01 empieza a contar en julio.
+export function isUpcoming(e) {
+  return !!e && !!e.future && monthKeyOf(e.date) > monthKeyOf(todayISO())
+}
+
 // Neto del grupo POR MONEDA (sin conversión). nets[cur] > 0 = te deben.
-// Excluye gastos futuros (cuotas por venir): no afectan el saldo hasta su mes.
+// Excluye solo las cuotas AÚN por venir (isUpcoming): la del mes en curso ya suma al saldo.
 export function compute(state, gid) {
   const me = state.me || 'dani'
   const sp = state.splits[gid] || {}
@@ -177,7 +185,7 @@ export function compute(state, gid) {
   const nets = {}
   const add = (cur, v) => { nets[cur] = (nets[cur] || 0) + v }
   ledger.forEach((e) => {
-    if (e.future) return
+    if (isUpcoming(e)) return
     const cur = e.currency || 'ARS'
     if (e.kind === 'transfer') {
       // pago/transferencia: salda deuda, no es consumo
@@ -208,7 +216,7 @@ export function balanceLines(state, gid) {
   const g = state.groups[gid]
   if (g.personal) {
     const t = {}
-    ;(state.ledgers[gid] || []).forEach((e) => { if (e.future) return; const cur = e.currency || 'ARS'; t[cur] = (t[cur] || 0) + e.amount })
+    ;(state.ledgers[gid] || []).forEach((e) => { if (isUpcoming(e)) return; const cur = e.currency || 'ARS'; t[cur] = (t[cur] || 0) + e.amount })
     const ls = curList(t).map(([cur, v]) => ({ pre: '', amount: fmt(v, cur), post: '', color: '#0B1220' }))
     return ls.length ? ls : [{ pre: '', amount: fmt(0), post: '', color: '#0B1220' }]
   }
@@ -292,7 +300,7 @@ export function computeFriend(state, pid) {
     const gnets = {}
     const gadd = (cur, v) => { gnets[cur] = (gnets[cur] || 0) + v; add(cur, v) }
     ;(state.ledgers[gid] || []).forEach((e) => {
-      if (e.future) return
+      if (isUpcoming(e)) return
       const cur = e.currency || 'ARS'
       if (e.kind === 'transfer') {
         // pago entre vos y esta persona: salda deuda (no es consumo). Otros pares se ignoran.
@@ -314,7 +322,7 @@ export function computeFriend(state, pid) {
       if (delta !== 0) gadd(cur, delta)
       const cat = catById(state, e.categoryId)
       const payer = memberById(state, gid, e.payerId)
-      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, catIcon: cat.icon, catName: e.desc || cat.name, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
+      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || cat.name, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
     })
     ;(state.payments[gid] || []).forEach((p) => {
       const cur = p.currency || 'ARS'
@@ -340,12 +348,12 @@ export function personalSpent(state, monthKey = null) {
   const t = {}
   const add = (cur, v) => { t[cur] = (t[cur] || 0) + v }
   const inMonth = (e) => !monthKey || monthKeyOf(e.date) === monthKey
-  ;(state.ledgers.personal || []).forEach((e) => { if (e.future || e.kind === 'transfer' || !inMonth(e)) return; add(e.currency || 'ARS', e.amount) })
+  ;(state.ledgers.personal || []).forEach((e) => { if (isUpcoming(e) || e.kind === 'transfer' || !inMonth(e)) return; add(e.currency || 'ARS', e.amount) })
   for (const gid in state.groups) {
     const g = state.groups[gid]
     if (g.personal) continue
     ;(state.ledgers[gid] || []).forEach((e) => {
-      if (e.future || e.kind === 'transfer' || !inMonth(e)) return
+      if (isUpcoming(e) || e.kind === 'transfer' || !inMonth(e)) return
       const share = consumeShare(state, gid, e)
       if (!share || share <= 0) return
       add(e.currency || 'ARS', e.amount * share)
@@ -363,7 +371,7 @@ export function myShareExpenses(state) {
     // En un 1:1 el "origen" se etiqueta con el nombre de la persona, no con el del espacio.
     const gname = isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
     ;(state.ledgers[gid] || []).forEach((e) => {
-      if (e.future || e.kind === 'transfer') return
+      if (isUpcoming(e) || e.kind === 'transfer') return
       const share = consumeShare(state, gid, e)
       if (!share || share <= 0) return
       const mine = e.amount * share
@@ -383,7 +391,7 @@ export function personalFeed(state, future = false) {
   const me = state.me || 'dani'
   const rows = []
   ;(state.ledgers.personal || []).forEach((e) => {
-    if (!!e.future !== future || e.kind === 'transfer') return
+    if (isUpcoming(e) !== future || e.kind === 'transfer') return
     const cat = catById(state, e.categoryId)
     rows.push({ id: e.id, gid: 'personal', own: true, gname: 'Personal', categoryId: e.categoryId, cur: e.currency || 'ARS', spent: e.amount, amount: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, payerId: me, cuota: e.cuota || null })
   })
@@ -392,7 +400,7 @@ export function personalFeed(state, future = false) {
     if (g.personal) continue
     const gname = isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
     ;(state.ledgers[gid] || []).forEach((e) => {
-      if (!!e.future !== future || e.kind === 'transfer') return
+      if (isUpcoming(e) !== future || e.kind === 'transfer') return
       const share = consumeShare(state, gid, e)
       if (!share || share <= 0) return
       const mine = e.amount * share
@@ -436,7 +444,7 @@ export function memberNets(state, gid) {
   const nets = {}
   const add = (mid, cur, v) => { (nets[mid] = nets[mid] || {})[cur] = (nets[mid][cur] || 0) + v }
   ;(state.ledgers[gid] || []).forEach((e) => {
-    if (e.future) return
+    if (isUpcoming(e)) return
     const cur = e.currency || 'ARS'
     if (e.kind === 'transfer') { add(e.from, cur, e.amount); add(e.to, cur, -e.amount); return }
     if (e.mode === 'settled') return // pagaron ambos, sin deuda
@@ -512,9 +520,18 @@ export function friendBalanceLines(state, pid) {
 
 // Movimientos compartidos con una persona, agrupados por día (más nuevos primero),
 // cada uno etiquetado con su grupo de origen. Para el detalle del chat 1:1 (vista agregada).
-export function friendMovementsByDay(state, pid) {
+export function friendMovementsByDay(state, pid, catFilter = [], q = '', curFilter = 'all', payerFilter = 'all') {
   const me = state.me || 'dani'
-  const expenses = computeFriend(state, pid).expenses.slice().sort(byRecency)
+  const expenses = computeFriend(state, pid).expenses
+    .filter((e) => {
+      if (catFilter && catFilter.length && !catFilter.includes(e.categoryId)) return false
+      if (curFilter && curFilter !== 'all' && (e.cur || 'ARS') !== curFilter) return false
+      if (payerFilter && payerFilter !== 'all' && (e.transfer || e.payerId !== payerFilter)) return false
+      if (q) { const hay = ((e.catName || '') + ' ' + (e.gname || '')).toLowerCase(); if (!hay.includes(q.toLowerCase())) return false }
+      return true
+    })
+    .slice()
+    .sort(byRecency)
   const order = []
   const byDay = {}
   expenses.forEach((e) => {
@@ -565,10 +582,17 @@ const STOP = new Set([
   'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre',
 ])
 
-function extractCat(state, gid, t) {
+// Nombre del gasto a partir del texto libre: se descartan números, símbolos ($, /, -…),
+// palabras de relleno (STOP) y los nombres de los miembros (que indican quién pagó, no el gasto).
+// Se conserva el TEXTO COMPLETO restante como nombre (ej. "burguer stacy" → "Burguer stacy",
+// "Pasaje MZA BA pagó Dani" → "Pasaje mza ba"). Antes se tomaba solo la 1ra palabra y el símbolo
+// "$" podía colarse como nombre; ahora \p{L} deja únicamente letras.
+function extractName(state, gid, t) {
   const mem = (state.groups[gid] || { members: [] }).members.map((m) => m.short.toLowerCase())
-  const words = t.replace(/[\d.\/-]/g, ' ').split(/\s+/).filter((w) => w && !STOP.has(w) && !mem.includes(w))
-  return words[0] || 'Gasto'
+  const words = t.replace(/[^\p{L}\s]/gu, ' ').split(/\s+/).filter((w) => w && !STOP.has(w) && !mem.includes(w))
+  if (!words.length) return ''
+  const s = words.join(' ')
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 // Categoría "Sin categoría": bucket único para gastos no reconocidos. NO inventamos una
@@ -586,19 +610,21 @@ export function normDesc(s) {
 }
 
 export function resolveCat(state, gid, t) {
+  // El nombre del gasto (texto libre) se conserva SIEMPRE, haya o no categoría reconocida,
+  // para que el movimiento se titule con lo que escribió el usuario (ej. "Pizza" en vez de la categoría).
+  const desc = extractName(state, gid, t)
+  // Categoría explícita mencionada por su nombre en el texto.
   for (const c of state.categories) {
     if (c.id === UNCAT_ID) continue // no auto-asignar el bucket por su nombre
-    if ((' ' + t + ' ').includes(c.name.toLowerCase())) return { id: c.id, name: c.name, icon: c.icon }
+    if ((' ' + t + ' ').includes(c.name.toLowerCase())) return { id: c.id, name: c.name, icon: c.icon, desc }
   }
-  // Sin coincidencia → "Sin categoría", conservando el texto como descripción del movimiento.
-  const label = extractCat(state, gid, t)
-  const desc = label.charAt(0).toUpperCase() + label.slice(1)
   // Memoria: si ya categorizaste manualmente un gasto con esta descripción, reusamos esa categoría.
   const remembered = (state.catMemory || {})[normDesc(desc)]
   if (remembered) {
     const c = catById(state, remembered)
     if (c && c.id !== UNCAT_ID) return { id: c.id, name: c.name, icon: c.icon, desc }
   }
+  // Sin coincidencia → "Sin categoría", conservando el texto como nombre del movimiento.
   const uc = uncatCategory(state)
   return { id: uc.id, name: uc.name, icon: uc.icon, desc }
 }
@@ -632,7 +658,7 @@ export function monthLongLabel(key) { return MES_LONG[Number(key.slice(5, 7)) - 
 // El gráfico totaliza ARS (no se mezclan monedas). methods = desglose por medio.
 export function buildHistory(state, gid, catFilter = [], q = '', curFilter = 'all', payerFilter = 'all') {
   const showTransfer = catFilter && catFilter.length > 0 && catFilter.includes('transfer')
-  const led = (state.ledgers[gid] || []).filter((e) => !e.future && catMatch(catFilter, e) && curMatch(curFilter, e) && payerMatch(payerFilter, e) && textMatch(state, gid, e, q) && (e.kind !== 'transfer' || showTransfer))
+  const led = (state.ledgers[gid] || []).filter((e) => !isUpcoming(e) && catMatch(catFilter, e) && curMatch(curFilter, e) && payerMatch(payerFilter, e) && textMatch(state, gid, e, q) && (e.kind !== 'transfer' || showTransfer))
   // moneda totalizada en el gráfico: la del filtro, o ARS por defecto (no se mezclan monedas)
   const chartCur = curFilter && curFilter !== 'all' ? curFilter : 'ARS'
   const cur = monthKeyOf(todayISO())
@@ -670,7 +696,7 @@ export function byRecency(a, b) {
 export function monthMovements(state, gid, key) {
   const g = state.groups[gid]
   return (state.ledgers[gid] || [])
-    .filter((e) => !e.future && monthKeyOf(e.date) === key)
+    .filter((e) => !isUpcoming(e) && monthKeyOf(e.date) === key)
     .slice()
     .sort(byRecency)
     .map((e) => {
@@ -711,7 +737,7 @@ export function impactOf(state, gid, e, daniPct) {
 
 // Categorías presentes en el ledger del grupo (para el filtro de históricos).
 export function groupCategories(state, gid) {
-  const set = new Set((state.ledgers[gid] || []).filter((e) => !e.future).map((e) => e.categoryId))
+  const set = new Set((state.ledgers[gid] || []).filter((e) => !isUpcoming(e)).map((e) => e.categoryId))
   return state.categories.filter((c) => set.has(c.id))
 }
 
@@ -727,7 +753,7 @@ export function curMatch(cur, e) {
 
 // Monedas presentes en el ledger del grupo (para el filtro de moneda), en orden fijo.
 export function groupCurrencies(state, gid) {
-  const set = new Set((state.ledgers[gid] || []).filter((e) => !e.future).map((e) => e.currency || 'ARS'))
+  const set = new Set((state.ledgers[gid] || []).filter((e) => !isUpcoming(e)).map((e) => e.currency || 'ARS'))
   return CURRENCIES.filter((c) => set.has(c))
 }
 
@@ -744,7 +770,7 @@ export function payerMatch(payerFilter, e) {
 export function groupPayers(state, gid) {
   const g = state.groups[gid]
   if (!g || g.personal) return []
-  const set = new Set((state.ledgers[gid] || []).filter((e) => !e.future && e.kind !== 'transfer' && e.payerId).map((e) => e.payerId))
+  const set = new Set((state.ledgers[gid] || []).filter((e) => !isUpcoming(e) && e.kind !== 'transfer' && e.payerId).map((e) => e.payerId))
   return g.members.filter((m) => set.has(m.id))
 }
 
@@ -792,7 +818,7 @@ export function rowFor(state, gid, e, opts = {}) {
 // catFilter = array de ids ([] = todas). Las transferencias no suman al gasto.
 export function monthData(state, gid, key, catFilter = [], q = '', curFilter = 'all', payerFilter = 'all') {
   const rows = (state.ledgers[gid] || [])
-    .filter((e) => !e.future && monthKeyOf(e.date) === key && catMatch(catFilter, e) && curMatch(curFilter, e) && payerMatch(payerFilter, e) && textMatch(state, gid, e, q))
+    .filter((e) => !isUpcoming(e) && monthKeyOf(e.date) === key && catMatch(catFilter, e) && curMatch(curFilter, e) && payerMatch(payerFilter, e) && textMatch(state, gid, e, q))
     .slice()
     .sort(byRecency)
   const totals = {}
@@ -817,7 +843,7 @@ export function monthData(state, gid, key, catFilter = [], q = '', curFilter = '
 // includeFuture=true suma también los meses de gastos futuros (para el rango del export CSV).
 export function ledgerMonths(state, gid, includeFuture = false) {
   const set = new Set()
-  ;(state.ledgers[gid] || []).forEach((e) => { if (includeFuture || !e.future) set.add(monthKeyOf(e.date)) })
+  ;(state.ledgers[gid] || []).forEach((e) => { if (includeFuture || !isUpcoming(e)) set.add(monthKeyOf(e.date)) })
   return [...set].sort().reverse()
 }
 
@@ -859,7 +885,7 @@ export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '', cur
     const grpLabel = mems.filter((m) => !excluded.includes(m.id)).map((m) => m.short + ' ' + Math.round(shareFor(state, gid, e, m.id) * 100) + '%').join(' / ')
     const divLabel = e.mode === 'settled' ? 'Pagaron ambos' : e.mode === 'full_mine' ? 'Todo ' + anchor.short : e.mode === 'full_theirs' ? 'Todo ' + otherM.short : grpLabel
     const imp = impactOf(state, gid, e, daniPct)
-    lines.push([fecha, mes, e.future ? 'Gasto futuro' : 'Gasto', e.desc || cat.name, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
+    lines.push([fecha, mes, isUpcoming(e) ? 'Gasto futuro' : 'Gasto', e.desc || cat.name, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
   })
   return '﻿' + lines.join('\n') // BOM para que Excel respete acentos
   } finally {
