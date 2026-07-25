@@ -9,6 +9,7 @@ const fmtCreated = (ts) => (ts ? fmtDateFull(String(ts).slice(0, 10)) : undefine
 const toRow = (e, gid) => ({
   id: e.id, group_id: gid, kind: e.kind || 'expense', date: e.date, time: e.time || null,
   currency: e.currency || 'ARS', category_id: e.categoryId || null, description: e.desc || null,
+  note: e.note || null,
   amount: e.amount, payer_key: e.payerId || null, mode: e.mode || 'group',
   cuota: e.cuota || null, future: !!e.future, from_key: e.from || null, to_key: e.to || null,
   excluded: e.excluded && e.excluded.length ? e.excluded : null,
@@ -185,6 +186,7 @@ export async function loadCloudState(userId) {
     const entry = { id: e.id, date: e.date, currency: e.currency || 'ARS', categoryId: e.category_id, amount: Number(e.amount), payerId: e.payer_key, mode: e.mode || 'group' }
     if (e.time) entry.time = e.time
     if (e.description) entry.desc = e.description
+    if (e.note) entry.note = e.note
     if (e.cuota) entry.cuota = e.cuota
     if (e.excluded) entry.excluded = e.excluded
     if (e.future) entry.future = true
@@ -215,6 +217,24 @@ export async function loadCloudState(userId) {
     if (r.date) m.date = r.date
     if (r.time) m.time = r.time
     threads[r.group_id].push(m)
+  }
+
+  // Reconstrucción de historial: los gastos que NO tienen tarjeta de chat (cargados antes de que
+  // existiera el chat compartido, o en 'personal' que nunca sincronizó mensajes) se muestran igual
+  // como tarjetas "Gasto guardado" de solo-historial. _hist=true → NO se re-sincronizan a la nube.
+  for (const gid in groups) {
+    const referenced = new Set()
+    for (const m of threads[gid]) if (m.expId) referenced.add(m.expId)
+    const extra = []
+    for (const e of ledgers[gid] || []) {
+      if (e.kind === 'transfer' || referenced.has(e.id)) continue
+      extra.push({ id: 'h_' + e.id, role: 'app', kind: 'saved', expId: e.id, _hist: true, date: e.date, time: e.time })
+    }
+    if (!extra.length) continue
+    const intro = threads[gid].filter((m) => String(m.id).startsWith('w'))
+    const rest = threads[gid].filter((m) => !String(m.id).startsWith('w')).concat(extra)
+    rest.sort((a, b) => msgKey(a.id) - msgKey(b.id)) // orden de creación (sufijo numérico del id/expId)
+    threads[gid] = [...intro, ...rest]
   }
 
   return {
