@@ -122,6 +122,16 @@ export default function Profile({ s, actions }) {
           Es la moneda que se usa al cargar un gasto sin aclarar otra. Podés cambiarla cuando quieras; los gastos ya cargados no se modifican.
         </div>
 
+        <div style={sectionLabel}>CATEGORÍAS</div>
+        <div onClick={actions.openCategories} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, padding: '13px 14px', marginBottom: 22, cursor: 'pointer', boxShadow: cardShadow }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: '#F1ECFD', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 }}>🏷️</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#0B1220' }}>Gestionar categorías</div>
+            <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 700 }}>Renombrar, ícono, fusionar</div>
+          </div>
+          <Chevron size={16} color="#C3CCDA" />
+        </div>
+
         <div style={sectionLabel}>PREFERENCIAS</div>
         <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, overflow: 'hidden', marginBottom: 22, boxShadow: cardShadow }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px' }}>

@@ -29,6 +29,10 @@ export async function cloudUpsertCategory(c) {
   const { error } = await supabase.from('categories').upsert({ id: c.id, icon: c.icon, name: c.name })
   if (error) console.error('[upsertCategory]', error.message)
 }
+export async function cloudDeleteCategory(id) {
+  const { error } = await supabase.from('categories').delete().eq('id', id)
+  if (error) console.error('[deleteCategory]', error.message)
+}
 
 // ----- Grupos y miembros -----
 const groupRow = (g) => ({

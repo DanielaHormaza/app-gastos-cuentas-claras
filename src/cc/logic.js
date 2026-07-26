@@ -797,6 +797,17 @@ export function textMatch(state, gid, e, q) {
   return entryName(state, gid, e).toLowerCase().includes(q.toLowerCase())
 }
 
+// Cuántos gastos usa cada categoría (en todos los espacios). Para la pantalla de gestión.
+export function categoryUsage(state) {
+  const u = {}
+  for (const gid in state.groups) for (const e of state.ledgers[gid] || []) {
+    if (e.kind === 'transfer') continue
+    const c = e.categoryId || 'sincat'
+    u[c] = (u[c] || 0) + 1
+  }
+  return u
+}
+
 // Etiqueta compacta de cuota para discriminar el gasto ("cta 1/3"). '' si no es cuota.
 export function cuotaLabel(e) {
   return e && e.cuota ? 'cta ' + e.cuota.n + '/' + e.cuota.total : ''
