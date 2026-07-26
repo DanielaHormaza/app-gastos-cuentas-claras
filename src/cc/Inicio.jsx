@@ -112,11 +112,16 @@ export default function Inicio({ s, actions }) {
         {totals.length === 0 ? (
           <div className="num" style={{ fontSize: 36, fontWeight: 500, letterSpacing: '-0.02em', color: '#0B1220', marginTop: 4 }}>$0</div>
         ) : (
-          totals.map(([cur, v], i) => (
-            <div key={cur} className="num" style={{ fontSize: i === 0 ? 36 : 19, fontWeight: 500, letterSpacing: '-0.02em', color: '#0B1220', marginTop: i === 0 ? 4 : 0, lineHeight: 1.15 }}>
-              {fmt(Math.abs(v), cur)}
-            </div>
-          ))
+          totals.map(([cur, v], i) => {
+            const pos = v >= 0
+            const tone = pos ? TONE.pos : TONE.neg
+            return (
+              <div key={cur} style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: i === 0 ? 4 : 2, flexWrap: 'wrap' }}>
+                <span className="num" style={{ fontSize: i === 0 ? 36 : 19, fontWeight: 500, letterSpacing: '-0.02em', color: tone, lineHeight: 1.15 }}>{fmt(Math.abs(v), cur)}</span>
+                <span style={{ fontSize: i === 0 ? 12.5 : 11, fontWeight: 800, color: tone }}>{pos ? 'te deben' : 'debés'}</span>
+              </div>
+            )
+          })
         )}
       </div>
 

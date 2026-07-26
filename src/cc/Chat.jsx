@@ -1,4 +1,4 @@
-import { useEffect, useRef, Fragment } from 'react'
+import { useEffect, useRef, useState, Fragment } from 'react'
 import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, personalFeed, curList, isUpcoming, CURRENCIES, monthShortLabel, monthLongLabel, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin, Search } from './icons'
@@ -181,10 +181,15 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   const taRef = useRef(null)
   const thread = s.threads[gid] || []
   const lastE = (s.ledgers[gid] || []).slice(-1)[0]
+  // Flechita "ir al final" (estilo WhatsApp): aparece cuando estás scrolleado hacia arriba.
+  const [atBottom, setAtBottom] = useState(true)
+  const scrollToBottom = () => { const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }
+  const onScroll = (e) => { const el = e.currentTarget; setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80) }
 
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
+    setAtBottom(true)
   }, [thread.length, gid])
 
   // textarea que crece con el contenido (y vuelve a 1 línea al limpiar)
@@ -216,7 +221,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   const dayDivider = (date) => (date === todayISO() ? 'HOY' : fmtDateFull(date).toUpperCase())
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
       {/* banner de saldo */}
       <div style={{ margin: '14px 16px 4px', borderRadius: 18, padding: '14px 18px', background: 'linear-gradient(135deg,rgba(46,204,177,.13),rgba(124,58,237,.13))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ minWidth: 0 }}>
@@ -241,7 +246,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
       )}
 
       {/* hilo */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 14px 12px' }}>
+      <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 14px 12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {items.length === 0 && <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>HOY</div>}
           {items.map((it, i) => {
@@ -277,6 +282,13 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
           })}
         </div>
       </div>
+
+      {/* flechita "ir al final" (estilo WhatsApp): solo cuando estás scrolleado hacia arriba */}
+      {!atBottom && (
+        <button onClick={scrollToBottom} aria-label="Ir al final" title="Ir al final" style={{ position: 'absolute', right: 16, bottom: 84, width: 40, height: 40, borderRadius: '50%', border: '1px solid #EEF1F6', background: '#fff', boxShadow: '0 6px 18px -6px rgba(15,23,42,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 5, animation: 'ccFade .15s ease' }}>
+          <ChevronDown size={20} color="#7C3AED" w={2.8} />
+        </button>
+      )}
 
       {/* "escribiendo…" justo arriba del input (parte de la conversación, discreto) */}
       {!readOnly && typingName && (

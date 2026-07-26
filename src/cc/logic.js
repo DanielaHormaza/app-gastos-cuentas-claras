@@ -972,12 +972,17 @@ export function adjustSplit(cur, id, delta) {
   return next
 }
 
+// Reparto en partes iguales, lo más parejo posible cuando 100 no es divisible (ej. 7 personas).
+// El resto se reparte de a +1 entre los primeros, en vez de acumularse todo en el último.
+// Ej: 7 personas → 15, 15, 14, 14, 14, 14, 14 (antes: 14×6 + 16 en el último).
 export function setEqualSplit(cur) {
   const ids = Object.keys(cur)
-  const base = Math.floor(100 / ids.length)
+  const n = ids.length
+  if (!n) return {}
+  const base = Math.floor(100 / n)
+  let rem = 100 - base * n
   const next = {}
-  let acc = 0
-  ids.forEach((x, i) => { next[x] = i === ids.length - 1 ? 100 - acc : base; acc += base })
+  ids.forEach((x) => { next[x] = base + (rem > 0 ? 1 : 0); if (rem > 0) rem-- })
   return next
 }
 
