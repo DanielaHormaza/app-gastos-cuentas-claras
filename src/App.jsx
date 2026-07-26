@@ -783,6 +783,10 @@ export default function App() {
         const members = (prev.groups[g] || {}).members || []
         const me = prev.me || 'dani'
         const validPayer = members.some((m) => m.id === raw.payerId)
+        // El MODO (se divide / saldado) NO lo decide la IA (se confunde): lo determinamos con reglas
+        // fijas del texto, igual que el parser. Solo es "saldado" si se dice ambos/saldado/a mano.
+        const low = ' ' + line.toLowerCase() + ' '
+        const mode = (!(prev.groups[g] && prev.groups[g].personal) && /\b(ambos|los dos|entre los dos|saldad[oa]s?|a mano|pagamos)\b/.test(low)) ? 'settled' : 'group'
         const exp = {
           amount: Math.round(Number(raw.amount)) || 0,
           categoryId: validCat ? raw.categoryId : 'sincat',
@@ -790,7 +794,7 @@ export default function App() {
           payerId: prev.groups[g] && prev.groups[g].personal ? me : validPayer ? raw.payerId : me,
           currency: CURRENCIES.includes(raw.currency) ? raw.currency : (prev.profile && prev.profile.currency) || 'ARS',
           cuotas: raw.cuotas && raw.cuotas > 1 ? Math.round(raw.cuotas) : null,
-          mode: ['group', 'settled', 'full_mine', 'full_theirs'].includes(raw.mode) ? raw.mode : 'group',
+          mode,
         }
         if (!exp.amount) return { threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, kind: 'text', text: 'No te entendí del todo 🤔.' } : m)) } }
         const entries = buildExpenseEntries(exp, Date.now(), todayISO(), nowTime(), prev.profile.name)
