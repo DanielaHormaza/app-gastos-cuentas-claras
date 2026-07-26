@@ -18,8 +18,11 @@ export default async function handler(req, res) {
     const sys = [
       'Elegí la categoría que mejor corresponde a la descripción de un gasto en español rioplatense.',
       `Categorías (id = nombre): ${list}.`,
-      'Respondé SOLO un JSON {"categoryId": "<id>"} con el id EXACTO de la lista, o {"categoryId": null} si ninguna aplica claramente.',
-      'Ej: "uber"/"taxi"/"sube"/"nafta" → transporte; "carrefour"/"verdulería" → super; "farmacia" → salud.',
+      'Respondé SOLO un JSON con:',
+      '- "categoryId": el id EXACTO de la lista que mejor aplica, o null si NINGUNA aplica razonablemente.',
+      '- "suggest": SOLO si categoryId es null y realmente ninguna encaja, una categoría nueva apropiada como {"name":"<nombre corto en singular, capitalizado>","emoji":"<un emoji>"}. Si alguna de la lista sirve, suggest=null.',
+      'Preferí SIEMPRE una categoría existente; sugerí una nueva solo como último recurso.',
+      'Ej: "uber"/"taxi"/"sube"/"nafta" → transporte; "carrefour"/"verdulería" → super; "farmacia" → salud; "netflix"/"spotify" → suscripciones.',
     ].join('\n')
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -27,7 +30,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
         temperature: 0,
-        max_tokens: 30,
+        max_tokens: 60,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: sys },
@@ -39,7 +42,8 @@ export default async function handler(req, res) {
     const data = await r.json()
     let parsed
     try { parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}') } catch { return j(res, { ok: false, error: 'json' }) }
-    return j(res, { ok: true, categoryId: parsed.categoryId || null })
+    const suggest = !parsed.categoryId && parsed.suggest && parsed.suggest.name ? { name: String(parsed.suggest.name).slice(0, 30), emoji: String(parsed.suggest.emoji || '🏷️').slice(0, 4) } : null
+    return j(res, { ok: true, categoryId: parsed.categoryId || null, suggest })
   } catch (e) {
     return j(res, { ok: false, error: 'server', detail: String(e).slice(0, 200) })
   }

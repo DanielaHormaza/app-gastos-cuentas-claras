@@ -778,19 +778,43 @@ export default function App() {
       catJobs.forEach((jb) => actions.aiCategorizeExp(jb.expId, jb.desc))
     },
     // Categoriza un gasto "Sin categoría" con la IA (una vez por descripción) y lo aprende en la memoria.
+    // Si ninguna categoría existente encaja, la IA sugiere una nueva y se pide confirmación en el chat.
     aiCategorizeExp: async (expId, desc) => {
       const g = s.groupId
       const cats = (s.categories || []).filter((c) => !['sincat', 'transfer', 'inicial'].includes(c.id)).map((c) => ({ id: c.id, name: c.name }))
       if (!cats.length) return
-      const catId = await aiCategorize(desc, cats)
-      if (!catId) return
-      set((prev) => {
-        if (!(prev.categories || []).some((c) => c.id === catId)) return {}
-        const led = (prev.ledgers[g] || []).map((e) => (e.id === expId && (!e.categoryId || e.categoryId === 'sincat') ? { ...e, categoryId: catId } : e))
-        const mem = { ...(prev.catMemory || {}), [normDesc(desc)]: catId } // aprende: la próxima vez, sin IA
-        return { ledgers: { ...prev.ledgers, [g]: led }, catMemory: mem }
-      })
+      const res = await aiCategorize(desc, cats)
+      if (!res) return
+      if (res.categoryId) {
+        set((prev) => {
+          if (!(prev.categories || []).some((c) => c.id === res.categoryId)) return {}
+          const led = (prev.ledgers[g] || []).map((e) => (e.id === expId && (!e.categoryId || e.categoryId === 'sincat') ? { ...e, categoryId: res.categoryId } : e))
+          const mem = { ...(prev.catMemory || {}), [normDesc(desc)]: res.categoryId } // aprende: la próxima vez, sin IA
+          return { ledgers: { ...prev.ledgers, [g]: led }, catMemory: mem }
+        })
+      } else if (res.suggest && res.suggest.name) {
+        // Tarjeta de confirmación (transitoria, per-device): crear la categoría sugerida o no.
+        const cardId = 'cs' + Date.now()
+        set((prev) => ({ threads: { ...prev.threads, [g]: [...(prev.threads[g] || []), { id: cardId, role: 'app', kind: 'catSuggest', expId, desc, suggest: res.suggest, date: todayISO(), time: nowTime() }] } }))
+      }
     },
+    // "Crear" la categoría sugerida por la IA: la crea, la asigna al gasto y la aprende.
+    createSuggestedCat: (msgId) =>
+      set((prev) => {
+        const g = prev.groupId
+        const msg = (prev.threads[g] || []).find((m) => m.id === msgId)
+        if (!msg || !msg.suggest) return {}
+        const name = msg.suggest.name.trim()
+        // Si ya existe una categoría con ese nombre (case-insensitive), la reusamos.
+        const existing = (prev.categories || []).find((c) => c.name.toLowerCase() === name.toLowerCase())
+        const catId = existing ? existing.id : 'cat' + Date.now()
+        const categories = existing ? prev.categories : [...prev.categories, { id: catId, icon: msg.suggest.emoji || '🏷️', name }]
+        const led = (prev.ledgers[g] || []).map((e) => (e.id === msg.expId && (!e.categoryId || e.categoryId === 'sincat') ? { ...e, categoryId: catId } : e))
+        const mem = { ...(prev.catMemory || {}), [normDesc(msg.desc)]: catId }
+        const thread = (prev.threads[g] || []).map((m) => (m.id === msgId ? { id: msgId, role: 'app', kind: 'text', text: '✓ Categoría «' + name + '» creada y asignada.', date: m.date, time: m.time } : m))
+        return { categories, ledgers: { ...prev.ledgers, [g]: led }, catMemory: mem, threads: { ...prev.threads, [g]: thread } }
+      }),
+    dismissSuggest: (msgId) => set((prev) => ({ threads: { ...prev.threads, [prev.groupId]: (prev.threads[prev.groupId] || []).filter((m) => m.id !== msgId) } })),
     // Reintenta interpretar una línea con la IA y, si sale, guarda el gasto reemplazando la tarjeta.
     aiResolve: async (msgId, line) => {
       const g = s.groupId

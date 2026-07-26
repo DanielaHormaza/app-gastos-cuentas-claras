@@ -32,7 +32,7 @@ export async function aiCategorize(desc, categories) {
     })
     const data = await r.json()
     if (!data || !data.ok) return null
-    return data.categoryId || null
+    return { categoryId: data.categoryId || null, suggest: data.suggest || null }
   } catch {
     return null
   }

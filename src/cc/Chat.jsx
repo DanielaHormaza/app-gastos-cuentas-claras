@@ -523,6 +523,21 @@ function Message({ m, s, g, gid, lastE, mkExp, actions, deleted }) {
       </Row>
     )
   }
+  // Sugerencia de categoría nueva (IA): ninguna existente encaja. Pide confirmación.
+  if (m.kind === 'catSuggest' && m.suggest) {
+    return (
+      <Row max="90%">
+        <div style={{ ...aiAvatar, marginTop: 2 }}>✨</div>
+        <div style={{ ...card, borderRadius: '16px 16px 16px 4px', padding: '13px 14px' }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#334155' }}>Ninguna categoría encaja con «{m.desc}». ¿Creo <b style={{ color: '#0B1220' }}>{m.suggest.emoji} {m.suggest.name}</b>?</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button onClick={() => actions.createSuggestedCat(m.id)} style={{ ...primaryBtn, flex: 1 }}>Crear categoría</button>
+            <button onClick={() => actions.dismissSuggest(m.id)} style={{ ...ghostBtn, padding: '9px 16px' }}>No</button>
+          </div>
+        </div>
+      </Row>
+    )
+  }
   return null
 }
 
