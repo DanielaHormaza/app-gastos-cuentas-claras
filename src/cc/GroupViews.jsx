@@ -99,7 +99,7 @@ export function Futuros({ s, actions }) {
                     <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ width: 30, height: 30, borderRadius: 9, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>{cat.icon}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{e.desc || cat.name}</div>
+                        <div style={{ fontWeight: 700, fontSize: 13.5, color: '#334155' }}>{e.desc || 'Sin nombre'}</div>
                         <div style={{ fontSize: 10.5, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                           {e.cuota ? 'Cuota ' + e.cuota.n + '/' + e.cuota.total : 'Gasto fijo'} · <span style={{ width: 14, height: 14, borderRadius: 4, background: payer.color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, flexShrink: 0 }}>{payer.initial}</span>{payer.short}
                         </div>

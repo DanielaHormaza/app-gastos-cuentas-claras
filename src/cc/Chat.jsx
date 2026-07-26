@@ -202,7 +202,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
     const cat = ex.categoryId ? catById(s, ex.categoryId) : { icon: ex.catIcon || '🏷️', name: ex.catName || 'Gasto' }
     const payer = memberById(s, gid, ex.payerId)
     return {
-      catIcon: cat.icon, catName: ex.desc || cat.name, amountText: fmt(ex.amount, ex.currency),
+      catIcon: cat.icon, catName: ex.desc || 'Sin nombre', amountText: fmt(ex.amount, ex.currency),
       payerInitial: payer.initial, payerColor: payer.color,
       descText: descFor(s, gid, ex, daniPctAt(s, gid, ex.date || todayISO())),
       dateText: ex.date ? fmtDateFull(ex.date) : 'hoy', cuotasText: ex.cuotas ? '· en ' + ex.cuotas + ' cuotas' : '',
@@ -436,11 +436,12 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
     )
   }
   if (m.kind === 'saved') {
-    let ex = m.exp
-    if (!ex && m.expId) {
-      const le = (s.ledgers[gid] || []).find((x) => x.id === m.expId)
-      if (le) ex = { amount: le.amount, categoryId: le.categoryId, payerId: le.payerId, mode: le.mode, desc: le.desc, currency: le.currency, date: le.date, cuota: le.cuota }
-    }
+    // Preferimos SIEMPRE el gasto vigente del ledger (para reflejar ediciones de nombre/monto/etc.);
+    // el snapshot m.exp queda solo como respaldo si el gasto ya no está en el ledger.
+    const le = m.expId ? (s.ledgers[gid] || []).find((x) => x.id === m.expId) : null
+    const ex = le
+      ? { amount: le.amount, categoryId: le.categoryId, payerId: le.payerId, mode: le.mode, desc: le.desc, currency: le.currency, date: le.date, cuota: le.cuota, editedBy: le.editedBy, editedAt: le.editedAt }
+      : m.exp
     const e = ex ? mkExp(ex) : null
     // Chip de cuotas: al cargar ("en 3 cuotas"); en el historial de una cuota puntual ("cuota 3/6").
     const cuotaChip = m.exp && m.exp.cuotas > 1 ? 'en ' + m.exp.cuotas + ' cuotas' : (ex && ex.cuota ? 'cuota ' + ex.cuota.n + '/' + ex.cuota.total : '')
@@ -462,8 +463,9 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
               </div>
             </div>
           )}
-          <div style={{ display: 'flex', gap: 14, marginTop: 11, paddingLeft: 2 }}>
+          <div style={{ display: 'flex', gap: 14, marginTop: 11, paddingLeft: 2, alignItems: 'center', justifyContent: 'space-between' }}>
             <span onClick={() => actions.editExp(m.id)} style={{ fontSize: 12.5, fontWeight: 800, color: '#7C3AED', cursor: 'pointer' }}>Editar</span>
+            {ex && ex.editedBy && ex.editedAt && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#B6BFCC' }}>editado por {ex.editedBy} · {fmtDateFull(ex.editedAt)}</span>}
           </div>
         </div>
       </Row>
@@ -704,7 +706,7 @@ function PersonalFilterBar({ s, actions, rows }) {
 // Fila de movimiento de Mis gastos (personal o tu parte de un grupo, con chip de origen).
 function MgRow({ s, r, actions }) {
   const me = s.me || 'dani'
-  const sub = r.own ? 'Personal' : r.payerId === me ? 'Pagaste vos' : 'Pagó ' + (r.payerShort || '')
+  const sub = r.own ? 'Personal' : r.settled ? 'Pagaron ambos · saldado' : r.payerId === me ? 'Pagaste vos' : 'Pagó ' + (r.payerShort || '')
   const onRow = () => { if (r.own) { const e = (s.ledgers.personal || []).find((x) => x.id === r.id); if (e) actions.openEdit(e) } else actions.openLedgerOf(r.gid) }
   return (
     <div onClick={onRow} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>
