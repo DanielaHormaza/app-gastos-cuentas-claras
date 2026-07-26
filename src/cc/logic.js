@@ -322,7 +322,7 @@ export function computeFriend(state, pid) {
       if (delta !== 0) gadd(cur, delta)
       const cat = catById(state, e.categoryId)
       const payer = memberById(state, gid, e.payerId)
-      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || cat.name, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
+      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || cat.name, cuota: e.cuota || null, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
     })
     ;(state.payments[gid] || []).forEach((p) => {
       const cur = p.currency || 'ARS'
@@ -544,6 +544,7 @@ export function friendMovementsByDay(state, pid, catFilter = [], q = '', curFilt
     byDay[key].push({
       id: e.id, gid: e.gid, gname: e.gname, direct: e.direct, showChip: !e.direct, catIcon: e.catIcon, title: e.catName,
       payerText: e.transfer ? 'Transferencia' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''),
+      cuotaText: cuotaLabel(e),
       amountText: fmt(e.amount, e.cur), impText, impColor,
     })
   })
@@ -784,6 +785,11 @@ export function textMatch(state, gid, e, q) {
   return entryName(state, gid, e).toLowerCase().includes(q.toLowerCase())
 }
 
+// Etiqueta compacta de cuota para discriminar el gasto ("cta 1/3"). '' si no es cuota.
+export function cuotaLabel(e) {
+  return e && e.cuota ? 'cta ' + e.cuota.n + '/' + e.cuota.total : ''
+}
+
 // Fila de movimiento para mostrar (gasto o transferencia). withDate: usar fecha en el subtítulo.
 export function rowFor(state, gid, e, opts = {}) {
   const g = state.groups[gid]
@@ -809,6 +815,7 @@ export function rowFor(state, gid, e, opts = {}) {
   return {
     id: e.id, entry: e, catIcon: cat.icon, title: e.desc || cat.name,
     sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + tail : 'Pagó ' + payer.short + ' · ' + tail,
+    cuotaText: cuotaLabel(e),
     avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
     amountText: fmt(e.amount, cur), impText: imp.text, impColor: imp.color, daniPct,
   }
@@ -862,7 +869,7 @@ export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '', cur
     .filter((e) => catMatch(catFilter, e) && curMatch(curFilter, e) && payerMatch(payerFilter, e) && textMatch(state, gid, e, q))
     .slice()
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-  const head = ['Fecha', 'Mes', 'Tipo', 'Descripción', 'Categoría', 'Monto', 'Moneda', 'Pagó', 'División', 'Tu parte', 'Impacto']
+  const head = ['Fecha', 'Mes', 'Tipo', 'Descripción', 'Cuota', 'Categoría', 'Monto', 'Moneda', 'Pagó', 'División', 'Tu parte', 'Impacto']
   const esc = (s) => { s = String(s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s }
   const lines = [head.join(',')]
   rows.forEach((e) => {
@@ -872,7 +879,7 @@ export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '', cur
     if (e.kind === 'transfer') {
       const from = memberById(state, gid, e.from)
       const to = memberById(state, gid, e.to)
-      lines.push([fecha, mes, 'Transferencia', from.short + ' → ' + to.short, 'Pagos y transferencias', e.amount, cur, from.short, '—', 0, from.short + ' le pagó a ' + to.short].map(esc).join(','))
+      lines.push([fecha, mes, 'Transferencia', from.short + ' → ' + to.short, '', 'Pagos y transferencias', e.amount, cur, from.short, '—', 0, from.short + ' le pagó a ' + to.short].map(esc).join(','))
       return
     }
     const cat = catById(state, e.categoryId)
@@ -885,7 +892,8 @@ export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '', cur
     const grpLabel = mems.filter((m) => !excluded.includes(m.id)).map((m) => m.short + ' ' + Math.round(shareFor(state, gid, e, m.id) * 100) + '%').join(' / ')
     const divLabel = e.mode === 'settled' ? 'Pagaron ambos' : e.mode === 'full_mine' ? 'Todo ' + anchor.short : e.mode === 'full_theirs' ? 'Todo ' + otherM.short : grpLabel
     const imp = impactOf(state, gid, e, daniPct)
-    lines.push([fecha, mes, isUpcoming(e) ? 'Gasto futuro' : 'Gasto', e.desc || cat.name, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
+    const cuotaStr = e.cuota ? e.cuota.n + '/' + e.cuota.total : ''
+    lines.push([fecha, mes, isUpcoming(e) ? 'Gasto futuro' : 'Gasto', e.desc || cat.name, cuotaStr, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
   })
   return '﻿' + lines.join('\n') // BOM para que Excel respete acentos
   } finally {
