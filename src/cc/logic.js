@@ -320,7 +320,7 @@ export function computeFriend(state, pid) {
         if (excl.includes(me) || excl.includes(pid)) return
         const catS = catById(state, e.categoryId)
         const payerS = memberById(state, gid, e.payerId)
-        expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: catS.icon, catName: e.desc || 'Sin nombre', cuota: e.cuota || null, settled: true, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payerS.short, delta: 0 })
+        expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: catS.icon, catName: e.desc || 'Sin nombre', cuota: e.cuota || null, sinNombre: !e.desc, settled: true, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payerS.short, delta: 0 })
         return
       }
       const pidShare = shareFor(state, gid, e, pid)
@@ -331,7 +331,7 @@ export function computeFriend(state, pid) {
       if (delta !== 0) gadd(cur, delta)
       const cat = catById(state, e.categoryId)
       const payer = memberById(state, gid, e.payerId)
-      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || 'Sin nombre', cuota: e.cuota || null, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
+      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || 'Sin nombre', cuota: e.cuota || null, sinNombre: !e.desc, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
     })
     ;(state.payments[gid] || []).forEach((p) => {
       const cur = p.currency || 'ARS'
@@ -551,7 +551,7 @@ export function friendMovementsByDay(state, pid, catFilter = [], q = '', curFilt
     else if (e.delta > 0) { impText = '+' + fmt(e.delta, e.cur); impColor = TONE.pos }
     else { impText = '−' + fmt(-e.delta, e.cur); impColor = TONE.neg }
     byDay[key].push({
-      id: e.id, gid: e.gid, gname: e.gname, direct: e.direct, showChip: !e.direct, catIcon: e.catIcon, title: e.catName,
+      id: e.id, gid: e.gid, gname: e.gname, direct: e.direct, showChip: !e.direct, catIcon: e.catIcon, title: e.catName, sinNombre: e.sinNombre,
       payerText: e.transfer ? 'Transferencia' : e.settled ? 'Pagaron ambos · saldado' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''),
       cuotaText: cuotaLabel(e),
       amountText: fmt(e.amount, e.cur), impText, impColor,
@@ -825,7 +825,7 @@ export function rowFor(state, gid, e, opts = {}) {
   const imp = impactOf(state, gid, e, daniPct)
   const tail = opts.withDate ? fmtDateFull(e.date) : e.time || fmtDateFull(e.date)
   return {
-    id: e.id, entry: e, catIcon: cat.icon, title: e.desc || 'Sin nombre',
+    id: e.id, entry: e, catIcon: cat.icon, title: e.desc || 'Sin nombre', sinNombre: !e.desc,
     sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + tail : 'Pagó ' + payer.short + ' · ' + tail,
     cuotaText: cuotaLabel(e),
     avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,

@@ -670,6 +670,9 @@ export default function App() {
     toggleMenu: () => set((prev) => ({ menuOpen: !prev.menuOpen })),
     closeMenu: () => set({ menuOpen: false }),
     goView: (view) => set({ view, menuOpen: false }),
+    // Ir al chat y saltar/resaltar el mensaje de un gasto (para ver qué se escribió al cargarlo).
+    viewInChat: (expId) => set({ view: 'chat', menuOpen: false, chatJump: expId }),
+    clearChatJump: () => set({ chatJump: null }),
     openConfig: () => set((prev) => (prev.groupId === 'personal' ? { screen: 'profile', menuOpen: false } : { configOpen: true, menuOpen: false })),
     closeConfig: () => set({ configOpen: false }),
 

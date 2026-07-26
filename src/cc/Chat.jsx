@@ -186,6 +186,22 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   const scrollToBottom = () => { const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }
   const onScroll = (e) => { const el = e.currentTarget; setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80) }
 
+  // "Ver en el chat": salta y resalta el mensaje del gasto (para ver qué se escribió al cargarlo).
+  const [highlightId, setHighlightId] = useState(null)
+  useEffect(() => {
+    if (!s.chatJump) return
+    const target = thread.find((m) => m.expId === s.chatJump)
+    if (target) {
+      const el = document.getElementById('ccmsg-' + target.id)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightId(target.id)
+      const t = setTimeout(() => setHighlightId(null), 2200)
+      actions.clearChatJump()
+      return () => clearTimeout(t)
+    }
+    actions.clearChatJump()
+  }, [s.chatJump, gid])
+
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
@@ -269,7 +285,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
             return (
               <Fragment key={m.id}>
                 {showDay && <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>{dayDivider(it.date)}</div>}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+                <div id={'ccmsg-' + m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start', borderRadius: 16, padding: highlightId === m.id ? 4 : 0, background: highlightId === m.id ? 'rgba(124,58,237,.12)' : 'transparent', transition: 'background .4s ease' }}>
                   {isPeer ? (
                     <PeerMessage m={m} s={s} g={g} showSender={showSender} />
                   ) : (
@@ -648,8 +664,8 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
                   <span style={{ position: 'absolute', bottom: -3, right: -3, width: 18, height: 18, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, boxShadow: '0 1px 3px rgba(15,23,42,.2)' }}>{it.catIcon}</span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{it.title}</div>
-                  <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>{it.sub}{it.cuotaText && <span style={cuotaPill}>{it.cuotaText}</span>}</div>
+                  <div style={{ fontWeight: 800, fontSize: 14.5, color: it.sinNombre ? '#94A3B8' : '#0B1220' }}>{it.title}</div>
+                  <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>{it.sub}{it.cuotaText && <span style={cuotaPill}>{it.cuotaText}</span>}{it.sinNombre && <span onClick={(e) => { e.stopPropagation(); actions.viewInChat(it.entry.id) }} style={{ color: '#7C3AED', fontWeight: 800, cursor: 'pointer' }}>· ver en el chat</span>}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{it.amountText}</div>
@@ -929,10 +945,9 @@ function FriendLedger({ s, peer, lines, actions }) {
               <div key={it.id} onClick={() => onRow(it)} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{it.catIcon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{it.title}</div>
+                  <div style={{ fontWeight: 800, fontSize: 14.5, color: it.sinNombre ? '#94A3B8' : '#0B1220' }}>{it.title}</div>
                   <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                    {it.showChip && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{it.gname}</span>}{it.payerText}{it.cuotaText && <span style={cuotaPill}>{it.cuotaText}</span>}
-                  </div>
+                    {it.showChip && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{it.gname}</span>}{it.payerText}{it.cuotaText && <span style={cuotaPill}>{it.cuotaText}</span>}{it.sinNombre && it.direct && <span onClick={(e) => { e.stopPropagation(); actions.viewInChat(it.id) }} style={{ color: '#7C3AED', fontWeight: 800, cursor: 'pointer' }}>· ver en el chat</span>}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{it.amountText}</div>
