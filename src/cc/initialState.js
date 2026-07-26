@@ -39,6 +39,7 @@ export const DEFAULT_CATEGORIES = [
   { id: 'mascotas', icon: '🐾', name: 'Mascotas' },
   { id: 'belleza', icon: '💇', name: 'Belleza / Cuidado' },
   { id: 'impuestos', icon: '🧾', name: 'Impuestos / Trámites' },
+  { id: 'ahorro', icon: '💰', name: 'Ahorro / Inversión' },
   { id: 'regalos', icon: '🎁', name: 'Regalos' },
   { id: 'alquiler', icon: '🏠', name: 'Alquiler' },
   { id: 'viaje', icon: '✈️', name: 'Viaje' },

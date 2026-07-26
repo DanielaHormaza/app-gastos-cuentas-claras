@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       'Elegí la categoría que mejor corresponde a la descripción de un gasto en español rioplatense.',
       `Categorías (id = nombre): ${list}.`,
       'Respondé SOLO un JSON {"categoryId": "<id>"} con el id EXACTO de la lista, o {"categoryId": null} si ninguna aplica claramente.',
-      'Ej: "uber"/"taxi"/"sube"/"nafta" → transporte; "carrefour"/"verdulería" → super; "farmacia" → salud; "netflix"/"spotify" → suscripciones.',
+      'Ej: "uber"/"taxi"/"sube"/"nafta" → transporte; "carrefour"/"verdulería" → super; "farmacia" → salud; "netflix"/"spotify" → suscripciones; "plazo fijo"/"crypto"/"inversión"/"ahorro" → ahorro.',
     ].join('\n')
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
