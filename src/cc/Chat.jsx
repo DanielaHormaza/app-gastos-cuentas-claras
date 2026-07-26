@@ -238,6 +238,14 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
     ...thread.map((m) => ({ t: 'msg', date: m.date || todayISO(), key: num(m.id), m })),
     ...xExps.map((e) => ({ t: 'x', date: e.date, key: num(e.id), e })),
   ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.key - b.key))
+  // Mensajes de usuario cuyo gasto fue eliminado → burbuja gris. Se detecta por adyacencia:
+  // el mensaje de usuario inmediatamente anterior a una tarjeta "Gasto eliminado" (van juntos).
+  const grayUserIds = new Set()
+  items.forEach((it, i) => {
+    if (it.t === 'msg' && it.m.kind === 'deleted') {
+      for (let j = i - 1; j >= 0; j--) { const p = items[j]; if (p.t === 'msg' && p.m.kind === 'user') { grayUserIds.add(p.m.id); break } }
+    }
+  })
   const dayDivider = (date) => (date === todayISO() ? 'HOY' : fmtDateFull(date).toUpperCase())
 
   return (
@@ -293,7 +301,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
                   {isPeer ? (
                     <PeerMessage m={m} s={s} g={g} showSender={showSender} />
                   ) : (
-                    <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} deleted={m.kind === 'user' && deletedBases.has(num(m.id))} />
+                    <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} deleted={m.kind === 'user' && (grayUserIds.has(m.id) || deletedBases.has(num(m.id)))} />
                   )}
                   {ts && <div style={{ fontSize: 9.5, fontWeight: 700, color: '#B6BFCC', padding: '3px 6px 0' }}>{!isPeer && m.by ? m.by + ' · ' : ''}{ts}</div>}
                 </div>
