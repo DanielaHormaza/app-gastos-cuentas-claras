@@ -280,7 +280,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
           {items.map((it, i) => {
             const prev = items[i - 1]
             const showDay = !prev || prev.date !== it.date
-            const senderOf = (x) => (!x ? null : x.t === 'x' ? 'x' : x.m.kind === 'user' ? x.m.by || meName : 'app')
+            const senderOf = (x) => (!x ? null : x.t === 'x' ? 'x' : x.m.kind === 'user' || x.m.kind === 'userdel' ? x.m.by || meName : 'app')
             if (it.t === 'x') {
               return (
                 <Fragment key={'x' + it.e.gid + it.e.id}>
@@ -292,16 +292,19 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
             const m = it.m
             const ts = m.time ? (m.date ? fmtDateDow(m.date) + ' · ' + m.time : m.time) : ''
             const isOwn = (m.kind === 'user' || m.kind === 'userdel') && (!m.by || m.by === meName)
-            const isPeer = m.kind === 'user' && m.by && m.by !== meName
+            const isPeer = (m.kind === 'user' || m.kind === 'userdel') && m.by && m.by !== meName
             const showSender = isPeer && senderOf(prev) !== senderOf(it)
+            // ¿mostrar gris/tachado? mensaje eliminado (userdel) o mensaje cuyo gasto se borró. Ahora
+            // se pasa TAMBIÉN a PeerMessage → el otro lo ve igual que vos (antes solo se grisaba el propio).
+            const isDeleted = m.kind === 'userdel' || grayUserIds.has(m.id) || deletedBases.has(num(m.id))
             return (
               <Fragment key={m.id}>
                 {showDay && <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>{dayDivider(it.date)}</div>}
                 <div id={'ccmsg-' + m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start', borderRadius: 16, padding: highlightId === m.id ? 4 : 0, background: highlightId === m.id ? 'rgba(124,58,237,.12)' : 'transparent', transition: 'background .4s ease' }}>
                   {isPeer ? (
-                    <PeerMessage m={m} s={s} g={g} showSender={showSender} />
+                    <PeerMessage m={m} s={s} g={g} showSender={showSender} deleted={isDeleted} />
                   ) : (
-                    <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} deleted={m.kind === 'user' && (grayUserIds.has(m.id) || deletedBases.has(num(m.id)))} />
+                    <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} deleted={isDeleted} />
                   )}
                   {ts && <div style={{ fontSize: 9.5, fontWeight: 700, color: '#B6BFCC', padding: '3px 6px 0' }}>{!isPeer && m.by ? m.by + ' · ' : ''}{ts}</div>}
                 </div>
@@ -637,7 +640,7 @@ function Message({ m, s, g, gid, lastE, mkExp, actions, deleted }) {
 
 /** Burbuja entrante de otra persona (estilo WhatsApp): avatar + nombre con color
  * único, solo en el primer mensaje de una tanda; los siguientes alinean con un spacer. */
-function PeerMessage({ m, s, g, showSender }) {
+function PeerMessage({ m, s, g, showSender, deleted }) {
   const mem = g.members.find((x) => x.short === m.by || x.name === m.by) || { id: m.by, initial: (m.by || '?')[0].toUpperCase(), short: m.by }
   const color = personColor(s, mem.id)
   return (
@@ -649,7 +652,8 @@ function PeerMessage({ m, s, g, showSender }) {
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         {showSender && <span style={{ fontSize: 11.5, fontWeight: 800, color, paddingLeft: 3 }}>{mem.short}</span>}
-        <div style={{ background: '#fff', border: '1px solid #EAEEF4', borderRadius: showSender ? '4px 16px 16px 16px' : '16px', padding: '9px 13px', fontSize: 13.5, fontWeight: 600, color: '#334155', boxShadow: '0 6px 18px -12px rgba(15,23,42,.35)' }}>{m.text}</div>
+        {/* eliminado → gris/tachado, igual que lo ve el que lo borró (simetría entre los dos) */}
+        <div style={{ background: deleted ? '#EEF1F6' : '#fff', border: '1px solid #EAEEF4', borderRadius: showSender ? '4px 16px 16px 16px' : '16px', padding: '9px 13px', fontSize: 13.5, fontWeight: 600, color: deleted ? '#94A3B8' : '#334155', textDecoration: deleted ? 'line-through' : 'none', boxShadow: deleted ? 'none' : '0 6px 18px -12px rgba(15,23,42,.35)' }}>{m.text}</div>
       </div>
     </div>
   )
