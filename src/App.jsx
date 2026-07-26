@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { makeInitialState, PALETTE, GRADIENTS, isSystemCategory } from './cc/initialState'
+import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
 import { makeDemoState } from './cc/seedDemo'
 import Welcome from './cc/Welcome'
 import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith, normDesc } from './cc/logic'
@@ -11,13 +11,12 @@ import Profile from './cc/Profile'
 import Archived from './cc/Archived'
 import NewGroup from './cc/NewGroup'
 import Uncategorized from './cc/Uncategorized'
-import Categories from './cc/Categories'
 import Friend, { AddFriend } from './cc/Friend'
 import { MethodDetail, MonthDetail } from './cc/Detail'
 import { Logo } from './cc/icons'
 import Login from './Login'
 import { supabase } from './supabase'
-import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudDeleteCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency, cloudSetArchived, cloudDeleteGroup, cloudSaveCatMemory } from './cloud'
+import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency, cloudSetArchived, cloudDeleteGroup, cloudSaveCatMemory } from './cloud'
 import { setAmountsHidden, CURRENCIES } from './cc/logic'
 import { aiParseExpense, aiCategorize, AI_ENABLED } from './ai'
 
@@ -405,12 +404,9 @@ export default function App() {
   useEffect(() => {
     if (!dataReady) { catSyncRef.current = null; return }
     const prev = catSyncRef.current
-    // Map id → "icono|nombre": sube solo las nuevas o las que cambiaron (renombre/ícono), y borra las quitadas.
-    const cur = new Map(s.categories.map((c) => [c.id, c.icon + '|' + c.name]))
-    if (prev === null) { catSyncRef.current = cur; return }
-    for (const c of s.categories) if (prev.get(c.id) !== cur.get(c.id)) cloudUpsertCategory(c)
-    for (const id of prev.keys()) if (!cur.has(id) && !isSystemCategory(id)) cloudDeleteCategory(id)
-    catSyncRef.current = cur
+    if (prev === null) { catSyncRef.current = new Set(s.categories.map((c) => c.id)); return }
+    for (const c of s.categories) if (!prev.has(c.id)) cloudUpsertCategory(c) // solo altas (nuevas categorías)
+    catSyncRef.current = new Set(s.categories.map((c) => c.id))
   }, [s.categories, dataReady])
 
   // espejo del chat → Supabase: sincroniza altas/ediciones/bajas de mensajes de historial (user/saved)
@@ -471,7 +467,7 @@ export default function App() {
           ledSyncRef.current = ledSnapshot(cloud.ledgers)
           grpSyncRef.current = groupSnapshot(cloud.groups)
           archSyncRef.current = cloud.archived
-          catSyncRef.current = new Map(cloud.categories.map((c) => [c.id, c.icon + '|' + c.name]))
+          catSyncRef.current = new Set(cloud.categories.map((c) => c.id))
           msgSyncRef.current = msgSnapshot(cloud.threads)
           setS((prev) => ({ ...prev, me: cloud.me, groups: cloud.groups, splits: cloud.splits, splitLog: cloud.splitLog, splitMeta: cloud.splitMeta, ledgers: cloud.ledgers, archived: cloud.archived, categories: cloud.categories, threads: mergeThreads(prev.threads, cloud.threads) }))
         } catch (e) {
@@ -600,31 +596,6 @@ export default function App() {
     // ---- navegación ----
     signOut: () => supabase.auth.signOut(),
     openProfile: () => set({ screen: 'profile', menuOpen: false }),
-    // ---- gestión de categorías ----
-    openCategories: () => set({ screen: 'categories', catEditId: null }),
-    closeCategories: () => set({ screen: 'profile', catEditId: null }),
-    toggleCatEdit: (id) => set((prev) => ({ catEditId: prev.catEditId === id ? null : id })),
-    renameCategory: (id, name) => set((prev) => ({ categories: (prev.categories || []).map((c) => (c.id === id ? { ...c, name: name || c.name } : c)) })),
-    setCatIconById: (id, icon) => set((prev) => ({ categories: (prev.categories || []).map((c) => (c.id === id ? { ...c, icon } : c)) })),
-    // Fusiona `fromId` en `toId`: reasigna todos los gastos y la memoria, y elimina la categoría origen.
-    mergeCategory: (fromId, toId) =>
-      set((prev) => {
-        if (fromId === toId) return { catEditId: null }
-        const ledgers = {}
-        for (const g in prev.ledgers) ledgers[g] = (prev.ledgers[g] || []).map((e) => (e.categoryId === fromId ? { ...e, categoryId: toId } : e))
-        const mem = {}
-        for (const k in prev.catMemory || {}) mem[k] = prev.catMemory[k] === fromId ? toId : prev.catMemory[k]
-        const categories = (prev.categories || []).filter((c) => c.id !== fromId)
-        return { ledgers, catMemory: mem, categories, catEditId: null }
-      }),
-    // Elimina una categoría custom SIN gastos (los gastos habría que fusionarlos antes).
-    deleteCategory: (id) =>
-      set((prev) => {
-        if (isSystemCategory(id)) return {}
-        const used = Object.values(prev.ledgers || {}).some((l) => (l || []).some((e) => e.categoryId === id))
-        if (used) return {} // tiene gastos: usar fusionar
-        return { categories: (prev.categories || []).filter((c) => c.id !== id), catEditId: null }
-      }),
     openPersonal: () => set({ ...FILTER_RESET, screen: 'chat', groupId: 'personal', view: 'chat', menuOpen: false, configOpen: false }),
     openGroup: (id) => set({ ...FILTER_RESET, screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false }),
     openNewGroup: () => set({ screen: 'newgroup', newGroup: { name: '', desc: '', date: '', members: [], memberName: '', invited: false } }),
@@ -806,44 +777,21 @@ export default function App() {
       // Categorización inteligente de los gastos que quedaron "Sin categoría" (async, no bloquea).
       catJobs.forEach((jb) => actions.aiCategorizeExp(jb.expId, jb.desc))
     },
-    // Categoriza un gasto "Sin categoría" con la IA (una vez por descripción) y lo aprende en la memoria.
-    // Si ninguna categoría existente encaja, la IA sugiere una nueva y se pide confirmación en el chat.
+    // Categoriza un gasto "Sin categoría" con la IA (una vez por descripción) y lo aprende en la
+    // memoria. Solo mapea a una categoría EXISTENTE del set (no crea nuevas).
     aiCategorizeExp: async (expId, desc) => {
       const g = s.groupId
       const cats = (s.categories || []).filter((c) => !['sincat', 'transfer', 'inicial'].includes(c.id)).map((c) => ({ id: c.id, name: c.name }))
       if (!cats.length) return
-      const res = await aiCategorize(desc, cats)
-      if (!res) return
-      if (res.categoryId) {
-        set((prev) => {
-          if (!(prev.categories || []).some((c) => c.id === res.categoryId)) return {}
-          const led = (prev.ledgers[g] || []).map((e) => (e.id === expId && (!e.categoryId || e.categoryId === 'sincat') ? { ...e, categoryId: res.categoryId } : e))
-          const mem = { ...(prev.catMemory || {}), [normDesc(desc)]: res.categoryId } // aprende: la próxima vez, sin IA
-          return { ledgers: { ...prev.ledgers, [g]: led }, catMemory: mem }
-        })
-      } else if (res.suggest && res.suggest.name) {
-        // Tarjeta de confirmación (transitoria, per-device): crear la categoría sugerida o no.
-        const cardId = 'cs' + Date.now()
-        set((prev) => ({ threads: { ...prev.threads, [g]: [...(prev.threads[g] || []), { id: cardId, role: 'app', kind: 'catSuggest', expId, desc, suggest: res.suggest, date: todayISO(), time: nowTime() }] } }))
-      }
-    },
-    // "Crear" la categoría sugerida por la IA: la crea, la asigna al gasto y la aprende.
-    createSuggestedCat: (msgId) =>
+      const catId = await aiCategorize(desc, cats)
+      if (!catId) return
       set((prev) => {
-        const g = prev.groupId
-        const msg = (prev.threads[g] || []).find((m) => m.id === msgId)
-        if (!msg || !msg.suggest) return {}
-        const name = msg.suggest.name.trim()
-        // Si ya existe una categoría con ese nombre (case-insensitive), la reusamos.
-        const existing = (prev.categories || []).find((c) => c.name.toLowerCase() === name.toLowerCase())
-        const catId = existing ? existing.id : 'cat' + Date.now()
-        const categories = existing ? prev.categories : [...prev.categories, { id: catId, icon: msg.suggest.emoji || '🏷️', name }]
-        const led = (prev.ledgers[g] || []).map((e) => (e.id === msg.expId && (!e.categoryId || e.categoryId === 'sincat') ? { ...e, categoryId: catId } : e))
-        const mem = { ...(prev.catMemory || {}), [normDesc(msg.desc)]: catId }
-        const thread = (prev.threads[g] || []).map((m) => (m.id === msgId ? { id: msgId, role: 'app', kind: 'text', text: '✓ Categoría «' + name + '» creada y asignada.', date: m.date, time: m.time } : m))
-        return { categories, ledgers: { ...prev.ledgers, [g]: led }, catMemory: mem, threads: { ...prev.threads, [g]: thread } }
-      }),
-    dismissSuggest: (msgId) => set((prev) => ({ threads: { ...prev.threads, [prev.groupId]: (prev.threads[prev.groupId] || []).filter((m) => m.id !== msgId) } })),
+        if (!(prev.categories || []).some((c) => c.id === catId)) return {}
+        const led = (prev.ledgers[g] || []).map((e) => (e.id === expId && (!e.categoryId || e.categoryId === 'sincat') ? { ...e, categoryId: catId } : e))
+        const mem = { ...(prev.catMemory || {}), [normDesc(desc)]: catId } // aprende: la próxima vez, sin IA
+        return { ledgers: { ...prev.ledgers, [g]: led }, catMemory: mem }
+      })
+    },
     // Reintenta interpretar una línea con la IA y, si sale, guarda el gasto reemplazando la tarjeta.
     aiResolve: async (msgId, line) => {
       const g = s.groupId
@@ -1293,7 +1241,6 @@ export default function App() {
       {s.screen === 'chat' && <Chat s={s} actions={actions} typingName={typingName} />}
       {s.screen === 'friend' && <Friend s={s} actions={actions} />}
       {s.screen === 'profile' && <Profile s={s} actions={actions} />}
-      {s.screen === 'categories' && <Categories s={s} actions={actions} />}
       {s.screen === 'archived' && <Archived s={s} actions={actions} />}
       {s.screen === 'uncat' && <Uncategorized s={s} actions={actions} />}
       {s.screen === 'newgroup' && <NewGroup s={s} actions={actions} />}
