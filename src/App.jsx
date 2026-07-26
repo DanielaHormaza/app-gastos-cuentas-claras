@@ -791,6 +791,7 @@ export default function App() {
           amount: Math.round(Number(raw.amount)) || 0,
           categoryId: validCat ? raw.categoryId : 'sincat',
           desc: raw.desc || undefined,
+          note: raw.note ? String(raw.note).slice(0, 300) : undefined,
           payerId: prev.groups[g] && prev.groups[g].personal ? me : validPayer ? raw.payerId : me,
           currency: CURRENCIES.includes(raw.currency) ? raw.currency : (prev.profile && prev.profile.currency) || 'ARS',
           cuotas: raw.cuotas && raw.cuotas > 1 ? Math.round(raw.cuotas) : null,

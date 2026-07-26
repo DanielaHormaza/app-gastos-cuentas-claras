@@ -15,15 +15,16 @@ function systemPrompt(ctx = {}) {
     'Sos un asistente que extrae UN gasto de un mensaje corto en español rioplatense.',
     'Respondé SOLO un objeto JSON con estas claves:',
     '- amount: número entero (sin separadores de miles). "2 lucas"=2000, "1.5k"=1500. Obligatorio; si no hay monto, amount=null.',
-    '- desc: string. Nombre corto del gasto (ej. "Café", "Pasaje MZA-BA"). Sin el monto ni el nombre de quién pagó.',
+    '- desc: string. Nombre corto del gasto (ej. "Café", "Pasaje MZA-BA"). Sin el monto ni el nombre de quién pagó ni la nota.',
+    '- note: string opcional. Aclaración o contexto del gasto que NO sea el nombre ni el monto (ej. si el mensaje dice "este gasto es una prueba", note="Cargado como prueba"). Resumila corta. Si no hay contexto extra, note=null.',
     '- categoryId: uno de los IDs de la lista de categorías si aplica claramente; si no, null.',
     '- payerId: el ID del miembro que pagó si se menciona; si no, null.',
     `- currency: código ISO ("ARS","USD","EUR","CLP","BRL","UYU","MXN","COP","PEN","GBP"). Default "${ctx.currency || 'ARS'}".`,
     '- cuotas: entero si se mencionan cuotas ("3 cuotas"=3); si no, null. El amount es POR CUOTA.',
-    '- mode: "group" (se divide), "settled" (pagaron ambos, sin deuda), "full_mine" o "full_theirs". Default "group".',
     `Miembros (id = nombre): ${members}. "yo"/"pagué yo" = el usuario actual (id "${ctx.me || 'dani'}").`,
     `Categorías disponibles (id = nombre): ${cats}.`,
     'No inventes categorías fuera de la lista. Si dudás, categoryId=null.',
+    'IMPORTANTE: si el mensaje NO describe un gasto (un saludo, una pregunta, charla, ej. "hola como estas?"), devolvé amount=null y el resto null.',
   ].join('\n')
 }
 
