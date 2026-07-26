@@ -761,7 +761,9 @@ export default function App() {
           const toAI = AI_ENABLED && needsAI({ ...prev, categories: cats }, g, line)
           let app
           if (toAI) {
-            app = { id: 'a' + id, role: 'app', kind: 'text', text: '✨ Pensando…' }
+            // kind 'thinking' (NO 'text'): mergeThreads descarta los 'text' al sincronizar, y si el
+            // rebote de realtime llega antes que la IA, borraría el "Pensando" y se perdería el gasto.
+            app = { id: 'a' + id, role: 'app', kind: 'thinking', text: '✨ Pensando…' }
           } else if (res.kind === 'interpret') {
             // Auto-guardado: se anota el gasto directo (sin preguntar ni confirmar); la tarjeta queda con "Editar".
             const exp = res.exp
@@ -812,8 +814,16 @@ export default function App() {
     // Reintenta interpretar una línea con la IA y, si sale, guarda el gasto reemplazando la tarjeta.
     aiResolve: async (msgId, line) => {
       const g = s.groupId
-      const setCard = (patch) => set((prev) => ({ threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, ...patch } : m)) } }))
-      setCard({ kind: 'text', text: '✨ Pensando…' })
+      // Reemplaza la tarjeta msgId con `patch`; si ya no está (el merge de sync pudo sacarla), la re-crea.
+      // Así el resultado de la IA nunca se pierde aunque el "Pensando" haya desaparecido en el camino.
+      const putThread = (thread, patch) => {
+        let found = false
+        const next = (thread || []).map((m) => (m.id === msgId ? ((found = true), { ...m, ...patch }) : m))
+        if (!found) next.push({ id: msgId, role: 'app', date: todayISO(), time: nowTime(), ...patch })
+        return next
+      }
+      const setCard = (patch) => set((prev) => ({ threads: { ...prev.threads, [g]: putThread(prev.threads[g], patch) } }))
+      setCard({ kind: 'thinking', text: '✨ Pensando…' })
       const ctx = {
         me: s.me || 'dani',
         today: todayISO(),
@@ -846,7 +856,7 @@ export default function App() {
           cuotas: raw.cuotas && raw.cuotas > 1 ? Math.round(raw.cuotas) : null,
           mode,
         }
-        if (!exp.amount) return { threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, kind: 'text', text: 'No te entendí del todo 🤔.' } : m)) } }
+        if (!exp.amount) return { threads: { ...prev.threads, [g]: putThread(prev.threads[g], { kind: 'text', text: 'No te entendí del todo 🤔.' }) } }
         // Cronograma de cuotas. El cliente arma las fechas (la IA solo dice mes/día): evita errores de
         // aritmética de años. Prioridad: schedule explícito (meses no consecutivos / montos distintos) >
         // cuotas consecutivas desde startMonth > gasto único.
@@ -864,7 +874,7 @@ export default function App() {
           const planExp = { ...exp, schedule, cuotas: schedule.length }
           return {
             catMemory: mem,
-            threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, role: 'app', kind: 'plan', exp: planExp } : m)) },
+            threads: { ...prev.threads, [g]: putThread(prev.threads[g], { role: 'app', kind: 'plan', text: undefined, exp: planExp }) },
           }
         }
         // Gasto único → autoguardado (como venía). Respeta la fecha si la IA dio mes/día.
@@ -873,7 +883,7 @@ export default function App() {
         return {
           catMemory: mem,
           ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), ...entries] },
-          threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, role: 'app', kind: 'saved', expId: entries[0].id, exp: { ...single, categoryId: entries[0].categoryId } } : m)) },
+          threads: { ...prev.threads, [g]: putThread(prev.threads[g], { role: 'app', kind: 'saved', text: undefined, expId: entries[0].id, exp: { ...single, categoryId: entries[0].categoryId } }) },
         }
       })
     },

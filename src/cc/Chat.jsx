@@ -397,6 +397,16 @@ function Message({ m, s, g, gid, lastE, mkExp, actions, deleted }) {
       </Row>
     )
   }
+  // "Pensando…" de la IA: kind propio (no 'text') para que mergeThreads no lo descarte mientras
+  // la IA resuelve; si no, un rebote de realtime lo borraría y se perdería el gasto.
+  if (m.kind === 'thinking') {
+    return (
+      <Row>
+        <Ai />
+        <div style={{ ...card, borderRadius: '16px 16px 16px 4px', padding: '11px 14px', fontSize: 13.5, fontWeight: 600, color: '#64748B' }}>{m.text || '✨ Pensando…'}</div>
+      </Row>
+    )
+  }
   // texto simple de la IA
   if (m.kind === 'text') {
     return (
