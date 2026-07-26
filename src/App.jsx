@@ -1011,6 +1011,25 @@ export default function App() {
       }),
     corNo: (id) => set((prev) => ({ threads: { ...prev.threads, [prev.groupId]: (prev.threads[prev.groupId] || []).map((m) => (m.id === id ? { id: m.id, role: 'app', kind: 'text', text: 'Ok, lo dejo como estaba.' } : m)) } })),
 
+    // ---- eliminar un mensaje del chat (long-press en una burbuja propia) ----
+    openMsgMenu: (id) => set({ msgMenu: id }),
+    closeMsgMenu: () => set({ msgMenu: null }),
+    // Saca del hilo el mensaje del usuario y su tarjeta-respuesta transitoria (misma base 'a'+n);
+    // NO toca tarjetas 'saved'/'deleted' (esas referencian un gasto). Al desaparecer del hilo local,
+    // el espejo de sync borra también el 'user' en Supabase (App: cloudDeleteMessage).
+    deleteMsg: (id) =>
+      set((prev) => {
+        const g = prev.groupId
+        const thread = prev.threads[g] || []
+        const base = (String(id).match(/\d+/) || [])[0]
+        const next = thread.filter((m) => {
+          if (m.id === id) return false
+          if (base && m.id === 'a' + base && m.kind !== 'saved' && m.kind !== 'deleted') return false
+          return true
+        })
+        return { threads: { ...prev.threads, [g]: next }, msgMenu: null }
+      }),
+
     // ---- hoja de edición ----
     openEdit,
     closeEdit: () => set({ editId: null, draft: null, editPanel: null }),

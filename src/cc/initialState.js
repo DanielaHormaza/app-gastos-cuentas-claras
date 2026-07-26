@@ -76,6 +76,7 @@ export function makeInitialState() {
     payerQuery: '',
     methodQuery: '',
     // ---- otros estados de UI ----
+    msgMenu: null, // id del mensaje del chat con el menú "eliminar" abierto (long-press)
     methodId: null,
     monthKey: null,
     monthFilter: null,

@@ -343,16 +343,47 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
           <button onClick={actions.sendChat} style={{ width: 46, height: 46, border: 'none', borderRadius: '50%', background: BRAND_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 6px 16px -6px rgba(59,130,246,.6)', cursor: 'pointer' }}><Send /></button>
         </div>
       )}
+
+      {s.msgMenu && <MsgMenuSheet s={s} actions={actions} />}
     </div>
+  )
+}
+
+/** Hoja para eliminar un mensaje del chat (se abre con long-press en una burbuja propia). */
+function MsgMenuSheet({ s, actions }) {
+  const m = (s.threads[s.groupId] || []).find((x) => x.id === s.msgMenu)
+  if (!m) return null
+  return (
+    <>
+      <div onClick={actions.closeMsgMenu} style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,.45)', animation: 'ccFade .2s ease', zIndex: 30 }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: '#fff', borderRadius: '20px 20px 0 0', padding: '16px 18px 26px', zIndex: 31, animation: 'ccUp .3s cubic-bezier(.22,1,.36,1)' }}>
+        <div style={{ width: 40, height: 4, borderRadius: 999, background: '#E2E8F0', margin: '0 auto 14px' }} />
+        <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220', marginBottom: 5 }}>Eliminar mensaje</div>
+        <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600, lineHeight: 1.45, marginBottom: 14 }}>Se borra del chat en todos tus dispositivos. Si ya guardaste el gasto, ese no se toca.</div>
+        {m.text && <div style={{ background: '#F4F6FA', borderRadius: 12, padding: '10px 12px', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 16, maxHeight: 84, overflow: 'hidden' }}>{m.text}</div>}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={actions.closeMsgMenu} style={{ ...ghostBtn, flex: 1, padding: 13, fontSize: 14 }}>Cancelar</button>
+          <button onClick={() => actions.deleteMsg(m.id)} style={{ flex: 1, border: 'none', background: '#FDEEF0', color: '#E11D5B', fontFamily: 'inherit', fontWeight: 800, fontSize: 14, padding: 13, borderRadius: 11, cursor: 'pointer' }}>Eliminar</button>
+        </div>
+      </div>
+    </>
   )
 }
 
 /** Renderiza una burbuja del hilo según su tipo. */
 function Message({ m, s, g, gid, lastE, mkExp, actions, deleted }) {
+  // Long-press (o click derecho) en una burbuja propia → menú "eliminar mensaje".
+  const pressTimer = useRef(null)
+  const longPress = {
+    onTouchStart: () => { pressTimer.current = setTimeout(() => actions.openMsgMenu(m.id), 480) },
+    onTouchEnd: () => clearTimeout(pressTimer.current),
+    onTouchMove: () => clearTimeout(pressTimer.current),
+    onContextMenu: (e) => { e.preventDefault(); actions.openMsgMenu(m.id) },
+  }
   // usuario. Si su gasto fue eliminado, la burbuja va en gris y tachada (marca que ya no está).
   if (m.kind === 'user') {
-    if (deleted) return <div style={{ alignSelf: 'flex-end', maxWidth: '82%', background: '#EEF1F6', color: '#94A3B8', padding: '11px 15px', borderRadius: '18px 18px 4px 18px', fontSize: 14, fontWeight: 600, textDecoration: 'line-through' }}>{m.text}</div>
-    return <div style={{ alignSelf: 'flex-end', maxWidth: '82%', background: 'linear-gradient(135deg,#3B82F6,#7C3AED)', color: '#fff', padding: '11px 15px', borderRadius: '18px 18px 4px 18px', fontSize: 14, fontWeight: 600, boxShadow: '0 10px 22px -14px rgba(124,58,237,.7)' }}>{m.text}</div>
+    if (deleted) return <div {...longPress} style={{ alignSelf: 'flex-end', maxWidth: '82%', background: '#EEF1F6', color: '#94A3B8', padding: '11px 15px', borderRadius: '18px 18px 4px 18px', fontSize: 14, fontWeight: 600, textDecoration: 'line-through', userSelect: 'none' }}>{m.text}</div>
+    return <div {...longPress} style={{ alignSelf: 'flex-end', maxWidth: '82%', background: 'linear-gradient(135deg,#3B82F6,#7C3AED)', color: '#fff', padding: '11px 15px', borderRadius: '18px 18px 4px 18px', fontSize: 14, fontWeight: 600, boxShadow: '0 10px 22px -14px rgba(124,58,237,.7)', userSelect: 'none' }}>{m.text}</div>
   }
   // gasto eliminado: tarjeta gris con el resumen de lo que era (queda el registro).
   if (m.kind === 'deleted') {
