@@ -439,9 +439,11 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
     let ex = m.exp
     if (!ex && m.expId) {
       const le = (s.ledgers[gid] || []).find((x) => x.id === m.expId)
-      if (le) ex = { amount: le.amount, categoryId: le.categoryId, payerId: le.payerId, mode: le.mode, desc: le.desc, currency: le.currency, date: le.date }
+      if (le) ex = { amount: le.amount, categoryId: le.categoryId, payerId: le.payerId, mode: le.mode, desc: le.desc, currency: le.currency, date: le.date, cuota: le.cuota }
     }
     const e = ex ? mkExp(ex) : null
+    // Chip de cuotas: al cargar ("en 3 cuotas"); en el historial de una cuota puntual ("cuota 3/6").
+    const cuotaChip = m.exp && m.exp.cuotas > 1 ? 'en ' + m.exp.cuotas + ' cuotas' : (ex && ex.cuota ? 'cuota ' + ex.cuota.n + '/' + ex.cuota.total : '')
     return (
       <Row max="92%">
         <div style={{ ...aiAvatar, marginTop: 2 }}><Check size={15} color="#fff" /></div>
@@ -454,8 +456,9 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
                 <div style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{e.catName}</div>
                 <div className="num" style={{ fontWeight: 700, fontSize: 16, color: '#0B1220' }}>{e.amountText}</div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#94A3B8', fontWeight: 700, flexWrap: 'wrap' }}>
                 <span style={{ width: 16, height: 16, borderRadius: 5, background: e.payerColor, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800 }}>{e.payerInitial}</span>{e.descText}
+                {cuotaChip && <span style={{ background: '#EEF3FF', color: '#3B82F6', padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 800 }}>{cuotaChip}</span>}
               </div>
             </div>
           )}

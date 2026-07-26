@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { makeInitialState } from './cc/initialState'
 import { fmtDateFull } from './cc/dates'
+import { isUpcoming } from './cc/logic'
 
 // La nube guarda created_at como timestamp ISO ("2026-06-21T18:00:..."); lo mostramos lindo ("21/jun/26").
 const fmtCreated = (ts) => (ts ? fmtDateFull(String(ts).slice(0, 10)) : undefined)
@@ -227,7 +228,10 @@ export async function loadCloudState(userId) {
     for (const m of threads[gid]) if (m.expId) referenced.add(m.expId)
     const extra = []
     for (const e of ledgers[gid] || []) {
-      if (e.kind === 'transfer' || referenced.has(e.id)) continue
+      // Las cuotas/gastos AÚN por venir (isUpcoming) no generan tarjeta en el chat: viven en
+      // "Gastos futuros" y aparecen en Movimientos cuando llega su mes. Así el último gasto
+      // cargado siempre queda al final del chat (no lo tapa una cuota con fecha futura).
+      if (e.kind === 'transfer' || referenced.has(e.id) || isUpcoming(e)) continue
       extra.push({ id: 'h_' + e.id, role: 'app', kind: 'saved', expId: e.id, _hist: true, date: e.date, time: e.time })
     }
     if (!extra.length) continue
