@@ -291,7 +291,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
             }
             const m = it.m
             const ts = m.time ? (m.date ? fmtDateDow(m.date) + ' · ' + m.time : m.time) : ''
-            const isOwn = m.kind === 'user' && (!m.by || m.by === meName)
+            const isOwn = (m.kind === 'user' || m.kind === 'userdel') && (!m.by || m.by === meName)
             const isPeer = m.kind === 'user' && m.by && m.by !== meName
             const showSender = isPeer && senderOf(prev) !== senderOf(it)
             return (
@@ -349,21 +349,40 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   )
 }
 
-/** Hoja para eliminar un mensaje del chat (se abre con long-press en una burbuja propia). */
+/** Hoja del long-press en una burbuja propia. Se ADAPTA según el mensaje:
+ *  - ya eliminado → Restaurar; - con gasto guardado → Eliminar gasto; - si no → Eliminar mensaje (gris). */
 function MsgMenuSheet({ s, actions }) {
-  const m = (s.threads[s.groupId] || []).find((x) => x.id === s.msgMenu)
+  const gid = s.groupId
+  const thread = s.threads[gid] || []
+  const m = thread.find((x) => x.id === s.msgMenu)
   if (!m) return null
+  const base = (String(m.id).match(/\d+/) || [])[0]
+  const hasExpense = thread.some((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
+  let title, desc, cta, onCta, danger
+  if (m.kind === 'userdel') {
+    title = 'Restaurar mensaje'; desc = 'Vuelve a mostrarse en el chat.'; cta = 'Restaurar'; danger = false
+    onCta = () => actions.restoreMsg(m.id)
+  } else if (hasExpense) {
+    title = 'Eliminar gasto'; desc = 'Este mensaje tiene un gasto guardado. Se elimina el gasto y se ajustan los saldos (queda registrado como eliminado).'; cta = 'Eliminar gasto'; danger = true
+    onCta = () => actions.deleteMsgExpense(m.id)
+  } else {
+    title = 'Eliminar mensaje'; desc = 'Se marca como eliminado (gris) en el chat, en todos tus dispositivos. Podés restaurarlo.'; cta = 'Eliminar'; danger = true
+    onCta = () => actions.softDeleteMsg(m.id)
+  }
+  const ctaStyle = danger
+    ? { background: '#FDEEF0', color: '#E11D5B' }
+    : { background: '#F1ECFD', color: '#7C3AED' }
   return (
     <>
       <div onClick={actions.closeMsgMenu} style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,.45)', animation: 'ccFade .2s ease', zIndex: 30 }} />
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: '#fff', borderRadius: '20px 20px 0 0', padding: '16px 18px 26px', zIndex: 31, animation: 'ccUp .3s cubic-bezier(.22,1,.36,1)' }}>
         <div style={{ width: 40, height: 4, borderRadius: 999, background: '#E2E8F0', margin: '0 auto 14px' }} />
-        <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220', marginBottom: 5 }}>Eliminar mensaje</div>
-        <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600, lineHeight: 1.45, marginBottom: 14 }}>Se borra del chat en todos tus dispositivos. Si ya guardaste el gasto, ese no se toca.</div>
+        <div style={{ fontWeight: 800, fontSize: 16, color: '#0B1220', marginBottom: 5 }}>{title}</div>
+        <div style={{ fontSize: 12.5, color: '#64748B', fontWeight: 600, lineHeight: 1.45, marginBottom: 14 }}>{desc}</div>
         {m.text && <div style={{ background: '#F4F6FA', borderRadius: 12, padding: '10px 12px', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 16, maxHeight: 84, overflow: 'hidden' }}>{m.text}</div>}
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={actions.closeMsgMenu} style={{ ...ghostBtn, flex: 1, padding: 13, fontSize: 14 }}>Cancelar</button>
-          <button onClick={() => actions.deleteMsg(m.id)} style={{ flex: 1, border: 'none', background: '#FDEEF0', color: '#E11D5B', fontFamily: 'inherit', fontWeight: 800, fontSize: 14, padding: 13, borderRadius: 11, cursor: 'pointer' }}>Eliminar</button>
+          <button onClick={onCta} style={{ flex: 1, border: 'none', fontFamily: 'inherit', fontWeight: 800, fontSize: 14, padding: 13, borderRadius: 11, cursor: 'pointer', ...ctaStyle }}>{cta}</button>
         </div>
       </div>
     </>
@@ -379,6 +398,10 @@ function Message({ m, s, g, gid, lastE, mkExp, actions, deleted }) {
     onTouchEnd: () => clearTimeout(pressTimer.current),
     onTouchMove: () => clearTimeout(pressTimer.current),
     onContextMenu: (e) => { e.preventDefault(); actions.openMsgMenu(m.id) },
+  }
+  // mensaje eliminado (borrado suave): burbuja gris/tachada. Long-press → restaurar.
+  if (m.kind === 'userdel') {
+    return <div {...longPress} style={{ alignSelf: 'flex-end', maxWidth: '82%', background: '#EEF1F6', color: '#94A3B8', padding: '11px 15px', borderRadius: '18px 18px 4px 18px', fontSize: 14, fontWeight: 600, textDecoration: 'line-through', userSelect: 'none' }}>{m.text}</div>
   }
   // usuario. Si su gasto fue eliminado, la burbuja va en gris y tachada (marca que ya no está).
   if (m.kind === 'user') {

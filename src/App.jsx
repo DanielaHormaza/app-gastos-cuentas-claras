@@ -47,7 +47,7 @@ const groupSnapshot = (groups) => {
 // ----- Chat compartido -----
 // Solo se sincronizan los mensajes de historial (lo que se tipea + gastos confirmados).
 // Las tarjetas transitorias (interpret/ambiguous/payment/correction/duplicate/plan) quedan per-device.
-const MSG_SYNC_KINDS = new Set(['user', 'saved', 'deleted'])
+const MSG_SYNC_KINDS = new Set(['user', 'saved', 'deleted', 'userdel'])
 const isIntro = (m) => typeof m.id === 'string' && m.id.startsWith('w')
 const msgKey = (m) => { if (isIntro(m)) return -1; const x = String(m.id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
 const msgFp = (m) => [m.kind, m.text, m.expId, m.by, m.time, m.date].join('|')
@@ -1021,23 +1021,49 @@ export default function App() {
       }),
     corNo: (id) => set((prev) => ({ threads: { ...prev.threads, [prev.groupId]: (prev.threads[prev.groupId] || []).map((m) => (m.id === id ? { id: m.id, role: 'app', kind: 'text', text: 'Ok, lo dejo como estaba.' } : m)) } })),
 
-    // ---- eliminar un mensaje del chat (long-press en una burbuja propia) ----
+    // ---- eliminar / restaurar un mensaje del chat (long-press en una burbuja propia) ----
     openMsgMenu: (id) => set({ msgMenu: id }),
     closeMsgMenu: () => set({ msgMenu: null }),
-    // Saca del hilo el mensaje del usuario y su tarjeta-respuesta transitoria (misma base 'a'+n);
-    // NO toca tarjetas 'saved'/'deleted' (esas referencian un gasto). Al desaparecer del hilo local,
-    // el espejo de sync borra también el 'user' en Supabase (App: cloudDeleteMessage).
-    deleteMsg: (id) =>
+    // Borrado SUAVE: el mensaje pasa a 'userdel' (gris/tachado). Es un UPDATE, no un DELETE → sincroniza
+    // idempotente con el realtime (no reaparece, y Juan ve "eliminado" en vez de un hueco). Además saca
+    // la tarjeta-respuesta EFÍMERA hermana ('a'+n) que no tiene dato atrás (Pensando/texto/corrección/plan).
+    softDeleteMsg: (id) =>
+      set((prev) => {
+        const g = prev.groupId
+        const base = (String(id).match(/\d+/) || [])[0]
+        const next = (prev.threads[g] || [])
+          .filter((m) => !(base && m.id === 'a' + base && m.kind !== 'saved' && m.kind !== 'deleted'))
+          .map((m) => (m.id === id && m.kind === 'user' ? { ...m, kind: 'userdel' } : m))
+        return { threads: { ...prev.threads, [g]: next }, msgMenu: null }
+      }),
+    // Deshacer el borrado suave.
+    restoreMsg: (id) =>
+      set((prev) => {
+        const g = prev.groupId
+        const next = (prev.threads[g] || []).map((m) => (m.id === id && m.kind === 'userdel' ? { ...m, kind: 'user' } : m))
+        return { threads: { ...prev.threads, [g]: next }, msgMenu: null }
+      }),
+    // Mensaje CON gasto guardado → borra el gasto (mismo flujo que "eliminar gasto"): lo saca del ledger
+    // y deja la(s) tarjeta(s) en "Gasto eliminado" (gris). Ajusta saldos y queda registrado.
+    deleteMsgExpense: (id) =>
       set((prev) => {
         const g = prev.groupId
         const thread = prev.threads[g] || []
         const base = (String(id).match(/\d+/) || [])[0]
-        const next = thread.filter((m) => {
-          if (m.id === id) return false
-          if (base && m.id === 'a' + base && m.kind !== 'saved' && m.kind !== 'deleted') return false
-          return true
-        })
-        return { threads: { ...prev.threads, [g]: next }, msgMenu: null }
+        const card = thread.find((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
+        if (!card) return { msgMenu: null }
+        const expId = card.expId
+        const e = (prev.ledgers[g] || []).find((it) => it.id === expId)
+        let summary = ''
+        if (e) {
+          const me = prev.me || 'dani'
+          const gp = prev.groups[g] || {}
+          const payerText = gp.personal ? '' : e.mode === 'settled' ? 'saldado' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + memberById(prev, g, e.payerId).short
+          summary = (e.desc || 'Sin nombre') + ' · ' + fmt(e.amount, e.currency) + (payerText ? ' · ' + payerText : '')
+        }
+        const l = (prev.ledgers[g] || []).filter((it) => it.id !== expId)
+        const nt = thread.map((m) => (m.expId === expId && (m.kind === 'saved' || m.kind === 'deleted') ? { ...m, kind: 'deleted', text: summary } : m))
+        return { ledgers: { ...prev.ledgers, [g]: l }, threads: { ...prev.threads, [g]: nt }, msgMenu: null }
       }),
 
     // ---- hoja de edición ----
