@@ -16,7 +16,7 @@ const MATI = { id: 'mati', name: 'Mati', short: 'Mati', color: '#2ECCB1', initia
 const LU = { id: 'lu', name: 'Lu', short: 'Lu', color: '#EC4899', initial: 'L' }
 const CARO = { id: 'caro', name: 'Caro', short: 'Caro', color: '#F59E0B', initial: 'C', pending: true, email: 'caro@demo.app' }
 
-const intro = (id, text) => [{ id: 'w' + id, role: 'app', kind: 'text', text }]
+const intro = () => [] // sin burbuja de sugerencia: la sugerencia vive en el placeholder del input
 const meta0 = { from: '2000-01-01', at: null, by: null }
 
 export function makeDemoState() {

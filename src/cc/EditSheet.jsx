@@ -1,4 +1,5 @@
 import { catById, memberById, guessIcon, CATEGORY_ICONS, CURRENCY_INFO } from './logic'
+import { fmtDateFull } from './dates'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, Close, ChevronDown, Check, Search, Trash, Plus, SplitIcon } from './icons'
 import CurrencyPicker from './CurrencyPicker'
@@ -63,7 +64,7 @@ function Fields({ s, g, dr, actions, splitLabels }) {
       <input
         value={dr.desc || ''}
         onChange={(e) => actions.onDesc(e.target.value)}
-        placeholder={cat.name}
+        placeholder="Sin nombre"
         style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '11px 13px', fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#0B1220', outline: 'none', marginBottom: 18, background: '#fff' }}
       />
 
@@ -91,6 +92,14 @@ function Fields({ s, g, dr, actions, splitLabels }) {
       <div style={{ marginBottom: 18 }}>
         <CurrencyPicker value={dr.currency || 'ARS'} onChange={actions.pickCurrency} compact />
       </div>
+
+      <div style={label}>FECHA DEL GASTO</div>
+      <input
+        type="date"
+        value={dr.date || ''}
+        onChange={(e) => actions.onDate(e.target.value)}
+        style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '11px 13px', fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#0B1220', outline: 'none', marginBottom: 18, background: '#fff' }}
+      />
 
       {g.personal ? (
         <>
@@ -138,7 +147,7 @@ function Fields({ s, g, dr, actions, splitLabels }) {
       <div style={{ textAlign: 'center', fontSize: 11, color: '#B6BFCC', fontWeight: 700, marginTop: 12 }}>
         ✓ Los cambios se guardan solos
         {(dr.createdBy || dr.editedBy) && (
-          <div style={{ marginTop: 2 }}>{dr.createdBy ? 'Cargado por ' + dr.createdBy : ''}{dr.editedBy ? ' · editado por ' + dr.editedBy : ''}</div>
+          <div style={{ marginTop: 2 }}>{dr.createdBy ? 'Cargado por ' + dr.createdBy : ''}{dr.editedBy ? ' · editado por ' + dr.editedBy + (dr.editedAt ? ' el ' + fmtDateFull(dr.editedAt) : '') : ''}</div>
         )}
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { makeInitialState } from './cc/initialState'
 import { fmtDateFull } from './cc/dates'
+import { isUpcoming } from './cc/logic'
 
 // La nube guarda created_at como timestamp ISO ("2026-06-21T18:00:..."); lo mostramos lindo ("21/jun/26").
 const fmtCreated = (ts) => (ts ? fmtDateFull(String(ts).slice(0, 10)) : undefined)
@@ -204,7 +205,7 @@ export async function loadCloudState(userId) {
   const msgKey = (id) => { const x = String(id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
   const threads = {}
   for (const gid in groups) {
-    threads[gid] = [{ id: 'w' + gid, role: 'app', kind: 'text', text: groups[gid].personal ? 'Anotá tus gastos personales. Ej: “3000 café”.' : 'Cargá un gasto escribiéndolo, ej: “8000 nafta pagó Juan”.' }]
+    threads[gid] = [] // sin burbuja de sugerencia en el chat: la sugerencia vive en el placeholder del input
   }
   const rank = (r) => (r.kind === 'user' ? 0 : 1) // a igual momento, el mensaje tipeado va antes que la tarjeta
   const msgs = (msgR.data || []).slice().sort((a, b) => msgKey(a.id) - msgKey(b.id) || rank(a) - rank(b))
@@ -227,7 +228,10 @@ export async function loadCloudState(userId) {
     for (const m of threads[gid]) if (m.expId) referenced.add(m.expId)
     const extra = []
     for (const e of ledgers[gid] || []) {
-      if (e.kind === 'transfer' || referenced.has(e.id)) continue
+      // Las cuotas/gastos AÚN por venir (isUpcoming) no generan tarjeta en el chat: viven en
+      // "Gastos futuros" y aparecen en Movimientos cuando llega su mes. Así el último gasto
+      // cargado siempre queda al final del chat (no lo tapa una cuota con fecha futura).
+      if (e.kind === 'transfer' || referenced.has(e.id) || isUpcoming(e)) continue
       extra.push({ id: 'h_' + e.id, role: 'app', kind: 'saved', expId: e.id, _hist: true, date: e.date, time: e.time })
     }
     if (!extra.length) continue

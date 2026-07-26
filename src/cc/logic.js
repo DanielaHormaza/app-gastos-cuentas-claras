@@ -313,7 +313,16 @@ export function computeFriend(state, pid) {
         return
       }
       const meShare = shareFor(state, gid, e, me)
-      if (meShare === null) return // saldado
+      if (meShare === null) {
+        // Gasto SALDADO (pagaron ambos): no genera deuda, pero es un gasto compartido real →
+        // se muestra en los movimientos del 1:1 con delta 0 (sin impacto en el saldo).
+        const excl = e.excluded || []
+        if (excl.includes(me) || excl.includes(pid)) return
+        const catS = catById(state, e.categoryId)
+        const payerS = memberById(state, gid, e.payerId)
+        expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: catS.icon, catName: e.desc || 'Sin nombre', cuota: e.cuota || null, settled: true, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payerS.short, delta: 0 })
+        return
+      }
       const pidShare = shareFor(state, gid, e, pid)
       let delta = 0
       if (e.payerId === me) delta = e.amount * pidShare        // pagaste vos → la persona te debe su parte
@@ -322,7 +331,7 @@ export function computeFriend(state, pid) {
       if (delta !== 0) gadd(cur, delta)
       const cat = catById(state, e.categoryId)
       const payer = memberById(state, gid, e.payerId)
-      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || cat.name, cuota: e.cuota || null, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
+      expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || 'Sin nombre', cuota: e.cuota || null, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payer.short, delta })
     })
     ;(state.payments[gid] || []).forEach((p) => {
       const cur = p.currency || 'ARS'
@@ -378,7 +387,7 @@ export function myShareExpenses(state) {
       if (mine < 1) return
       const cat = catById(state, e.categoryId)
       const payer = memberById(state, gid, e.payerId)
-      out.push({ id: e.id, gid, gname, ggrad: g.gradient, ginitial: g.initial, direct: false, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || cat.name, amount: e.amount, cur: e.currency || 'ARS', date: e.date, payerId: e.payerId, payerShort: payer.short, delta: -mine })
+      out.push({ id: e.id, gid, gname, ggrad: g.gradient, ginitial: g.initial, direct: false, categoryId: e.categoryId, catIcon: cat.icon, catName: e.desc || 'Sin nombre', amount: e.amount, cur: e.currency || 'ARS', date: e.date, payerId: e.payerId, payerShort: payer.short, delta: -mine })
     })
   }
   return out
@@ -393,7 +402,7 @@ export function personalFeed(state, future = false) {
   ;(state.ledgers.personal || []).forEach((e) => {
     if (isUpcoming(e) !== future || e.kind === 'transfer') return
     const cat = catById(state, e.categoryId)
-    rows.push({ id: e.id, gid: 'personal', own: true, gname: 'Personal', categoryId: e.categoryId, cur: e.currency || 'ARS', spent: e.amount, amount: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, payerId: me, cuota: e.cuota || null })
+    rows.push({ id: e.id, gid: 'personal', own: true, gname: 'Personal', categoryId: e.categoryId, cur: e.currency || 'ARS', spent: e.amount, amount: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || 'Sin nombre', payerId: me, cuota: e.cuota || null })
   })
   for (const gid in state.groups) {
     const g = state.groups[gid]
@@ -407,7 +416,7 @@ export function personalFeed(state, future = false) {
       if (mine < 1) return
       const cat = catById(state, e.categoryId)
       const payer = memberById(state, gid, e.payerId)
-      rows.push({ id: e.id, gid, own: false, gname, categoryId: e.categoryId, cur: e.currency || 'ARS', spent: mine, amount: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || cat.name, payerId: e.payerId, payerShort: payer.short, cuota: e.cuota || null })
+      rows.push({ id: e.id, gid, own: false, gname, categoryId: e.categoryId, cur: e.currency || 'ARS', spent: mine, amount: e.amount, date: e.date, catIcon: cat.icon, title: e.desc || 'Sin nombre', payerId: e.payerId, payerShort: payer.short, cuota: e.cuota || null, settled: e.mode === 'settled' })
     })
   }
   return rows
@@ -543,7 +552,7 @@ export function friendMovementsByDay(state, pid, catFilter = [], q = '', curFilt
     else { impText = '−' + fmt(-e.delta, e.cur); impColor = TONE.neg }
     byDay[key].push({
       id: e.id, gid: e.gid, gname: e.gname, direct: e.direct, showChip: !e.direct, catIcon: e.catIcon, title: e.catName,
-      payerText: e.transfer ? 'Transferencia' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''),
+      payerText: e.transfer ? 'Transferencia' : e.settled ? 'Pagaron ambos · saldado' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + (e.payerShort || ''),
       cuotaText: cuotaLabel(e),
       amountText: fmt(e.amount, e.cur), impText, impColor,
     })
@@ -574,13 +583,16 @@ const STOP = new Set([
   'por', 'ayer', 'hoy', 'que', 'un', 'una', 'mi', 'su', 'le', 'solo', 'entre', 'entreambos', 'a',
   'entró', 'perdon', 'perdón', 'eran', 'era', 'debo', 'debe', 'deben', 'debés', 'debes', 'total',
   'todo', 'toda', 'mama', 'mamá', 'papa', 'papá', 'ambos',
-  // monedas y fechas (no son categorías)
+  // comandos de división (no son parte del nombre)
+  'saldado', 'saldada', 'saldados', 'saldar', 'saldá',
+  // monedas y palabras de fecha relativa (no son parte del nombre)
   'usd', 'u$s', 'dolar', 'dólar', 'dolares', 'dólares', 'clp', 'pesos', 'chilenos', 'dia', 'día',
   'eur', 'euro', 'euros', 'brl', 'real', 'reales', 'reais', 'uyu', 'uruguayo', 'uruguayos', 'mxn',
   'mexicano', 'mexicanos', 'cop', 'colombiano', 'colombianos', 'pen', 'sol', 'soles', 'peruano',
-  'gbp', 'libra', 'libras',
-  'anteayer', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
-  'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre',
+  'gbp', 'libra', 'libras', 'anteayer',
+  // NOTA: los meses (enero…diciembre) NO están en STOP a propósito: si el usuario escribe
+  // "alquiler junio", "junio" es parte del nombre. Las fechas explícitas ("1 de junio") se
+  // parsean aparte a e.date; el "de" cae por STOP.
 ])
 
 // Nombre del gasto a partir del texto libre: se descartan números, símbolos ($, /, -…),
@@ -707,7 +719,7 @@ export function monthMovements(state, gid, key) {
       const df = fmtDateFull(e.date)
       const cur = e.currency || 'ARS'
       return {
-        catIcon: cat.icon, title: e.desc || cat.name,
+        catIcon: cat.icon, title: e.desc || 'Sin nombre',
         sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + df : 'Pagó ' + payer.short + ' · ' + df,
         amountText: fmt(e.amount, cur), avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
         methodId: e.methodId || 'sin', _amt: e.amount, _cur: cur,
@@ -813,7 +825,7 @@ export function rowFor(state, gid, e, opts = {}) {
   const imp = impactOf(state, gid, e, daniPct)
   const tail = opts.withDate ? fmtDateFull(e.date) : e.time || fmtDateFull(e.date)
   return {
-    id: e.id, entry: e, catIcon: cat.icon, title: e.desc || cat.name,
+    id: e.id, entry: e, catIcon: cat.icon, title: e.desc || 'Sin nombre',
     sub: g.personal ? (meth ? meth.name : 'Sin medio') + ' · ' + tail : 'Pagó ' + payer.short + ' · ' + tail,
     cuotaText: cuotaLabel(e),
     avatarColor: g.personal ? '#7C3AED' : payer.color, avatarInitial: g.personal ? 'D' : payer.initial,
@@ -893,7 +905,7 @@ export function buildCsv(state, gid, fromKey, toKey, catFilter = [], q = '', cur
     const divLabel = e.mode === 'settled' ? 'Pagaron ambos' : e.mode === 'full_mine' ? 'Todo ' + anchor.short : e.mode === 'full_theirs' ? 'Todo ' + otherM.short : grpLabel
     const imp = impactOf(state, gid, e, daniPct)
     const cuotaStr = e.cuota ? e.cuota.n + '/' + e.cuota.total : ''
-    lines.push([fecha, mes, isUpcoming(e) ? 'Gasto futuro' : 'Gasto', e.desc || cat.name, cuotaStr, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
+    lines.push([fecha, mes, isUpcoming(e) ? 'Gasto futuro' : 'Gasto', e.desc || '', cuotaStr, cat.name, e.amount, cur, payer.short, divLabel, tuParte, imp.text].map(esc).join(','))
   })
   return '﻿' + lines.join('\n') // BOM para que Excel respete acentos
   } finally {
@@ -972,12 +984,17 @@ export function adjustSplit(cur, id, delta) {
   return next
 }
 
+// Reparto en partes iguales, lo más parejo posible cuando 100 no es divisible (ej. 7 personas).
+// El resto se reparte de a +1 entre los primeros, en vez de acumularse todo en el último.
+// Ej: 7 personas → 15, 15, 14, 14, 14, 14, 14 (antes: 14×6 + 16 en el último).
 export function setEqualSplit(cur) {
   const ids = Object.keys(cur)
-  const base = Math.floor(100 / ids.length)
+  const n = ids.length
+  if (!n) return {}
+  const base = Math.floor(100 / n)
+  let rem = 100 - base * n
   const next = {}
-  let acc = 0
-  ids.forEach((x, i) => { next[x] = i === ids.length - 1 ? 100 - acc : base; acc += base })
+  ids.forEach((x) => { next[x] = base + (rem > 0 ? 1 : 0); if (rem > 0) rem-- })
   return next
 }
 
@@ -1016,7 +1033,7 @@ export function parseChat(state, gid, text) {
   let forcedMode = null
   let forcedPayer = null
   if (!g.personal) {
-    if (/\b(ambos|los dos|entre los dos)\b/.test(t)) {
+    if (/\b(ambos|los dos|entre los dos|saldad[oa]s?)\b/.test(t)) {
       forcedMode = 'settled'
       forcedPayer = me
     } else if (/(le\s+)?deb[oó]\s+(el\s+)?total|debo\s+todo|lo\s+debo\s+todo/.test(t)) {

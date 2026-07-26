@@ -1,4 +1,4 @@
-import { useEffect, useRef, Fragment } from 'react'
+import { useEffect, useRef, useState, Fragment } from 'react'
 import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, personalFeed, curList, isUpcoming, CURRENCIES, monthShortLabel, monthLongLabel, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
 import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin, Search } from './icons'
@@ -181,10 +181,15 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   const taRef = useRef(null)
   const thread = s.threads[gid] || []
   const lastE = (s.ledgers[gid] || []).slice(-1)[0]
+  // Flechita "ir al final" (estilo WhatsApp): aparece cuando estás scrolleado hacia arriba.
+  const [atBottom, setAtBottom] = useState(true)
+  const scrollToBottom = () => { const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }
+  const onScroll = (e) => { const el = e.currentTarget; setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80) }
 
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
+    setAtBottom(true)
   }, [thread.length, gid])
 
   // textarea que crece con el contenido (y vuelve a 1 línea al limpiar)
@@ -197,7 +202,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
     const cat = ex.categoryId ? catById(s, ex.categoryId) : { icon: ex.catIcon || '🏷️', name: ex.catName || 'Gasto' }
     const payer = memberById(s, gid, ex.payerId)
     return {
-      catIcon: cat.icon, catName: ex.desc || cat.name, amountText: fmt(ex.amount, ex.currency),
+      catIcon: cat.icon, catName: ex.desc || 'Sin nombre', amountText: fmt(ex.amount, ex.currency),
       payerInitial: payer.initial, payerColor: payer.color,
       descText: descFor(s, gid, ex, daniPctAt(s, gid, ex.date || todayISO())),
       dateText: ex.date ? fmtDateFull(ex.date) : 'hoy', cuotasText: ex.cuotas ? '· en ' + ex.cuotas + ' cuotas' : '',
@@ -216,7 +221,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   const dayDivider = (date) => (date === todayISO() ? 'HOY' : fmtDateFull(date).toUpperCase())
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
       {/* banner de saldo */}
       <div style={{ margin: '14px 16px 4px', borderRadius: 18, padding: '14px 18px', background: 'linear-gradient(135deg,rgba(46,204,177,.13),rgba(124,58,237,.13))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ minWidth: 0 }}>
@@ -241,7 +246,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
       )}
 
       {/* hilo */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 14px 12px' }}>
+      <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 14px 12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {items.length === 0 && <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: '#B6BFCC', letterSpacing: '0.05em', margin: '2px 0' }}>HOY</div>}
           {items.map((it, i) => {
@@ -277,6 +282,13 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
           })}
         </div>
       </div>
+
+      {/* flechita "ir al final" (estilo WhatsApp): solo cuando estás scrolleado hacia arriba */}
+      {!atBottom && (
+        <button onClick={scrollToBottom} aria-label="Ir al final" title="Ir al final" style={{ position: 'absolute', right: 16, bottom: 84, width: 40, height: 40, borderRadius: '50%', border: '1px solid #EEF1F6', background: '#fff', boxShadow: '0 6px 18px -6px rgba(15,23,42,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 5, animation: 'ccFade .15s ease' }}>
+          <ChevronDown size={20} color="#7C3AED" w={2.8} />
+        </button>
+      )}
 
       {/* "escribiendo…" justo arriba del input (parte de la conversación, discreto) */}
       {!readOnly && typingName && (
@@ -424,12 +436,15 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
     )
   }
   if (m.kind === 'saved') {
-    let ex = m.exp
-    if (!ex && m.expId) {
-      const le = (s.ledgers[gid] || []).find((x) => x.id === m.expId)
-      if (le) ex = { amount: le.amount, categoryId: le.categoryId, payerId: le.payerId, mode: le.mode, desc: le.desc, currency: le.currency, date: le.date }
-    }
+    // Preferimos SIEMPRE el gasto vigente del ledger (para reflejar ediciones de nombre/monto/etc.);
+    // el snapshot m.exp queda solo como respaldo si el gasto ya no está en el ledger.
+    const le = m.expId ? (s.ledgers[gid] || []).find((x) => x.id === m.expId) : null
+    const ex = le
+      ? { amount: le.amount, categoryId: le.categoryId, payerId: le.payerId, mode: le.mode, desc: le.desc, currency: le.currency, date: le.date, cuota: le.cuota, editedBy: le.editedBy, editedAt: le.editedAt }
+      : m.exp
     const e = ex ? mkExp(ex) : null
+    // Chip de cuotas: al cargar ("en 3 cuotas"); en el historial de una cuota puntual ("cuota 3/6").
+    const cuotaChip = m.exp && m.exp.cuotas > 1 ? 'en ' + m.exp.cuotas + ' cuotas' : (ex && ex.cuota ? 'cuota ' + ex.cuota.n + '/' + ex.cuota.total : '')
     return (
       <Row max="92%">
         <div style={{ ...aiAvatar, marginTop: 2 }}><Check size={15} color="#fff" /></div>
@@ -442,13 +457,15 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
                 <div style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{e.catName}</div>
                 <div className="num" style={{ fontWeight: 700, fontSize: 16, color: '#0B1220' }}>{e.amountText}</div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#94A3B8', fontWeight: 700, flexWrap: 'wrap' }}>
                 <span style={{ width: 16, height: 16, borderRadius: 5, background: e.payerColor, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800 }}>{e.payerInitial}</span>{e.descText}
+                {cuotaChip && <span style={{ background: '#EEF3FF', color: '#3B82F6', padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 800 }}>{cuotaChip}</span>}
               </div>
             </div>
           )}
-          <div style={{ display: 'flex', gap: 14, marginTop: 11, paddingLeft: 2 }}>
+          <div style={{ display: 'flex', gap: 14, marginTop: 11, paddingLeft: 2, alignItems: 'center', justifyContent: 'space-between' }}>
             <span onClick={() => actions.editExp(m.id)} style={{ fontSize: 12.5, fontWeight: 800, color: '#7C3AED', cursor: 'pointer' }}>Editar</span>
+            {ex && ex.editedBy && ex.editedAt && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#B6BFCC' }}>editado por {ex.editedBy} · {fmtDateFull(ex.editedAt)}</span>}
           </div>
         </div>
       </Row>
@@ -689,7 +706,7 @@ function PersonalFilterBar({ s, actions, rows }) {
 // Fila de movimiento de Mis gastos (personal o tu parte de un grupo, con chip de origen).
 function MgRow({ s, r, actions }) {
   const me = s.me || 'dani'
-  const sub = r.own ? 'Personal' : r.payerId === me ? 'Pagaste vos' : 'Pagó ' + (r.payerShort || '')
+  const sub = r.own ? 'Personal' : r.settled ? 'Pagaron ambos · saldado' : r.payerId === me ? 'Pagaste vos' : 'Pagó ' + (r.payerShort || '')
   const onRow = () => { if (r.own) { const e = (s.ledgers.personal || []).find((x) => x.id === r.id); if (e) actions.openEdit(e) } else actions.openLedgerOf(r.gid) }
   return (
     <div onClick={onRow} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderRadius: 15, padding: '11px 12px', boxShadow: '0 2px 10px -7px rgba(15,23,42,.3)', cursor: 'pointer' }}>

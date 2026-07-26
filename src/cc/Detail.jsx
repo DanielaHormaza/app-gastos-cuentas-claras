@@ -33,7 +33,7 @@ export function MethodDetail({ s, actions }) {
             return (
               <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 11 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 12, background: '#F4F6FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{cat.icon}</div>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{e.desc || cat.name}</div><div style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600 }}>{fmtDateFull(e.date)}</div></div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{e.desc || 'Sin nombre'}</div><div style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600 }}>{fmtDateFull(e.date)}</div></div>
                 <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{fmt(e.amount, e.currency)}</div>
               </div>
             )

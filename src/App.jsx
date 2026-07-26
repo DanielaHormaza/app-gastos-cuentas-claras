@@ -82,7 +82,7 @@ const applyEdit = (prev, patch) => {
   const draft = { ...prev.draft, ...patch, editedBy: prev.profile.name, editedAt: todayISO() }
   const l = (prev.ledgers[g] || []).map((it) =>
     it.id === prev.editId
-      ? { ...it, categoryId: draft.categoryId, amount: draft.amount, payerId: draft.payerId, desc: draft.desc !== undefined ? (draft.desc || undefined) : it.desc, note: draft.note !== undefined ? (draft.note || undefined) : it.note, methodId: draft.methodId !== undefined ? draft.methodId : it.methodId || null, mode: draft.mode || 'group', currency: draft.currency || 'ARS', excluded: draft.excluded || [], editedBy: draft.editedBy, editedAt: draft.editedAt }
+      ? { ...it, categoryId: draft.categoryId, amount: draft.amount, payerId: draft.payerId, desc: draft.desc !== undefined ? (draft.desc || undefined) : it.desc, note: draft.note !== undefined ? (draft.note || undefined) : it.note, date: draft.date || it.date, methodId: draft.methodId !== undefined ? draft.methodId : it.methodId || null, mode: draft.mode || 'group', currency: draft.currency || 'ARS', excluded: draft.excluded || [], editedBy: draft.editedBy, editedAt: draft.editedAt }
       : it,
   )
   return { draft, ledgers: { ...prev.ledgers, [g]: l } }
@@ -150,7 +150,7 @@ const buildDirect = (prev, pid, person, pending, email) => {
     splitLog: { ...prev.splitLog, [id]: [] },
     splitMeta: { ...prev.splitMeta, [id]: { from: '2000-01-01', at: null, by: null } },
     ledgers: { ...prev.ledgers, [id]: [] },
-    threads: { ...prev.threads, [id]: [{ id: 'w' + id, role: 'app', kind: 'text', text: 'Chat 1:1 con ' + friend.short + '. Escribí un gasto, ej: “2000 café pagué yo”.' }] },
+    threads: { ...prev.threads, [id]: [] },
     payments: { ...prev.payments, [id]: [] },
     screen: 'chat', groupId: id, view: 'chat', menuOpen: false, configOpen: false,
   }
@@ -545,7 +545,7 @@ export default function App() {
 
   // Abre la hoja de edición para un gasto del ledger.
   const openEdit = (e) =>
-    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, desc: e.desc || '', note: e.note || '', methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS', excluded: e.excluded || [], createdBy: e.createdBy, editedBy: e.editedBy, editedAt: e.editedAt }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
+    set({ editId: e.id, draft: { categoryId: e.categoryId, amount: e.amount, payerId: e.payerId, desc: e.desc || '', note: e.note || '', date: e.date || todayISO(), methodId: e.methodId || null, mode: e.mode || 'group', currency: e.currency || 'ARS', excluded: e.excluded || [], createdBy: e.createdBy, editedBy: e.editedBy, editedAt: e.editedAt }, editPanel: null, catQuery: '', payerQuery: '', methodQuery: '' })
 
   // Aplica un nuevo reparto registrando el régimen anterior "hasta hoy": el nuevo % rige desde hoy.
   // Editar varias veces el mismo día NO crea regímenes extra (sólo el primero del día archiva el anterior).
@@ -821,7 +821,7 @@ export default function App() {
           splits,
           threads: { ...prev.threads, [g]: thread.map((m) => (m.id === id ? { ...m, kind: 'saved', expId: entry.id, exp: { ...exp, categoryId: catId } } : m)) },
           editId: entry.id,
-          draft: { categoryId: catId, amount: entry.amount, payerId: entry.payerId, desc: entry.desc || '', note: entry.note || '', methodId: null, mode: entry.mode, currency: entry.currency, createdBy: entry.createdBy },
+          draft: { categoryId: catId, amount: entry.amount, payerId: entry.payerId, desc: entry.desc || '', note: entry.note || '', date: entry.date, methodId: null, mode: entry.mode, currency: entry.currency, createdBy: entry.createdBy },
           editPanel: null, catQuery: '', payerQuery: '', methodQuery: '',
         }
       }),
@@ -884,6 +884,7 @@ export default function App() {
     },
     onDesc: (v) => set((prev) => applyEdit(prev, { desc: v })),
     onNote: (v) => set((prev) => applyEdit(prev, { note: v })),
+    onDate: (v) => set((prev) => applyEdit(prev, { date: v || todayISO() })),
     onCatQuery: (v) => set({ catQuery: v }),
     setNewCatIcon: (icon) => set({ newCatIcon: icon }),
     pickCat: (id) => set((prev) => ({ ...applyEdit(prev, { categoryId: id }), editPanel: null, catQuery: '', newCatIcon: null })),
@@ -1125,7 +1126,7 @@ export default function App() {
           splitLog: { ...prev.splitLog, [id]: [] },
           splitMeta: { ...prev.splitMeta, [id]: { from: '2000-01-01', at: null, by: null } },
           ledgers: { ...prev.ledgers, [id]: [] },
-          threads: { ...prev.threads, [id]: [{ id: 'w' + id, role: 'app', kind: 'text', text: '¡Grupo creado! Cargá el primer gasto escribiéndolo acá.', time: nowTime() }] },
+          threads: { ...prev.threads, [id]: [] },
           payments: { ...prev.payments, [id]: [] },
           screen: 'chat', groupId: id, view: 'chat',
           newGroup: { name: '', desc: '', date: '', members: [], memberName: '', invited: false },
