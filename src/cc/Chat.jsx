@@ -191,18 +191,20 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   useEffect(() => {
     if (!s.chatJump) return
     const target = thread.find((m) => m.expId === s.chatJump)
-    if (target) {
+    actions.clearChatJump()
+    if (!target) return
+    setHighlightId(target.id)
+    // rAF: esperamos al layout para que scrollIntoView calcule bien la posición.
+    requestAnimationFrame(() => {
       const el = document.getElementById('ccmsg-' + target.id)
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      setHighlightId(target.id)
-      const t = setTimeout(() => setHighlightId(null), 2200)
-      actions.clearChatJump()
-      return () => clearTimeout(t)
-    }
-    actions.clearChatJump()
+    })
+    const t = setTimeout(() => setHighlightId(null), 2400)
+    return () => clearTimeout(t)
   }, [s.chatJump, gid])
 
   useEffect(() => {
+    if (s.chatJump) return // no auto-bajar al final si estamos por saltar a un gasto puntual
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
     setAtBottom(true)
