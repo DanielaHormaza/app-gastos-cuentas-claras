@@ -18,6 +18,7 @@ import Login from './Login'
 import { supabase } from './supabase'
 import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency, cloudSetArchived, cloudDeleteGroup, cloudSaveCatMemory } from './cloud'
 import { setAmountsHidden, CURRENCIES } from './cc/logic'
+import { aiParseExpense, AI_ENABLED } from './ai'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
 const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.note, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null), JSON.stringify(e.excluded || [])].join('|')
@@ -716,6 +717,9 @@ export default function App() {
       const tm = nowTime()
       const base = Date.now()
       const day = todayISO()
+      // Líneas que el parser de reglas NO entiende (sin monto) → candidatas a la IA (si está activa).
+      // El id de la tarjeta es determinístico ('a' + id) para poder reemplazarla al volver la IA.
+      const aiJobs = AI_ENABLED ? lines.map((line, i) => ({ id: 'a' + (base + i), line })).filter((_, i) => parseChat(s, gid, lines[i]).kind === 'unknown') : []
       set((prev) => {
         const g = prev.groupId
         let cats = prev.categories
@@ -754,6 +758,46 @@ export default function App() {
           msgs.push(app)
         })
         return { categories: cats, splits, ledgers: { ...prev.ledgers, [g]: ledger }, threads: { ...prev.threads, [g]: [...(prev.threads[g] || []), ...msgs] }, chatInput: '' }
+      })
+      // Fallback con IA: para lo que el parser no entendió, lo interpretamos con OpenAI (async, no bloquea).
+      aiJobs.forEach((jb) => actions.aiResolve(jb.id, jb.line))
+    },
+    // Reintenta interpretar una línea con la IA y, si sale, guarda el gasto reemplazando la tarjeta.
+    aiResolve: async (msgId, line) => {
+      const g = s.groupId
+      const setCard = (patch) => set((prev) => ({ threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, ...patch } : m)) } }))
+      setCard({ kind: 'text', text: '✨ Pensando…' })
+      const ctx = {
+        me: s.me || 'dani',
+        currency: (s.profile && s.profile.currency) || 'ARS',
+        members: ((s.groups[g] || {}).members || []).map((m) => ({ id: m.id, short: m.short })),
+        categories: (s.categories || []).filter((c) => c.id !== 'sincat').map((c) => ({ id: c.id, name: c.name })),
+      }
+      const raw = await aiParseExpense(line, ctx)
+      if (!raw || !raw.amount) {
+        setCard({ kind: 'text', text: 'No te entendí del todo 🤔. Probá con monto y detalle, ej: “8000 nafta pagó Juan”.' })
+        return
+      }
+      set((prev) => {
+        const validCat = (prev.categories || []).some((c) => c.id === raw.categoryId)
+        const members = (prev.groups[g] || {}).members || []
+        const me = prev.me || 'dani'
+        const validPayer = members.some((m) => m.id === raw.payerId)
+        const exp = {
+          amount: Math.round(Number(raw.amount)) || 0,
+          categoryId: validCat ? raw.categoryId : 'sincat',
+          desc: raw.desc || undefined,
+          payerId: prev.groups[g] && prev.groups[g].personal ? me : validPayer ? raw.payerId : me,
+          currency: CURRENCIES.includes(raw.currency) ? raw.currency : (prev.profile && prev.profile.currency) || 'ARS',
+          cuotas: raw.cuotas && raw.cuotas > 1 ? Math.round(raw.cuotas) : null,
+          mode: ['group', 'settled', 'full_mine', 'full_theirs'].includes(raw.mode) ? raw.mode : 'group',
+        }
+        if (!exp.amount) return { threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, kind: 'text', text: 'No te entendí del todo 🤔.' } : m)) } }
+        const entries = buildExpenseEntries(exp, Date.now(), todayISO(), nowTime(), prev.profile.name)
+        return {
+          ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), ...entries] },
+          threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { id: msgId, role: 'app', kind: 'saved', expId: entries[0].id, exp: { ...exp, categoryId: entries[0].categoryId } } : m)) },
+        }
       })
     },
 
