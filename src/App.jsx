@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { makeInitialState, PALETTE, GRADIENTS } from './cc/initialState'
 import { makeDemoState } from './cc/seedDemo'
 import Welcome from './cc/Welcome'
-import { parseChat, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith, normDesc } from './cc/logic'
-import { todayISO, nowTime, fmtDateFull, monthKeyOf } from './cc/dates'
+import { parseChat, needsAI, guessIcon, adjustSplit, setEqualSplit, fmt, memberById, personById, personColor, friendIds, directGroupWith, normDesc } from './cc/logic'
+import { todayISO, nowTime, fmtDateFull, monthKeyOf, monthToISO, resolveSchedule } from './cc/dates'
 import Inicio from './cc/Inicio'
 import Chat from './cc/Chat'
 import EditSheet from './cc/EditSheet'
@@ -46,7 +46,7 @@ const groupSnapshot = (groups) => {
 
 // ----- Chat compartido -----
 // Solo se sincronizan los mensajes de historial (lo que se tipea + gastos confirmados).
-// Las tarjetas transitorias (interpret/ambiguous/payment/correction/duplicate) quedan per-device.
+// Las tarjetas transitorias (interpret/ambiguous/payment/correction/duplicate/plan) quedan per-device.
 const MSG_SYNC_KINDS = new Set(['user', 'saved', 'deleted'])
 const isIntro = (m) => typeof m.id === 'string' && m.id.startsWith('w')
 const msgKey = (m) => { if (isIntro(m)) return -1; const x = String(m.id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
@@ -110,6 +110,17 @@ const buildExpenseEntries = (exp, baseId, day, tm, createdBy) => {
   const common = {
     categoryId: exp.categoryId, payerId: exp.payerId, note: exp.note || undefined,
     mode: exp.mode || 'group', currency: exp.currency || 'ARS', createdBy,
+  }
+  // Cronograma explícito (viene del camino de IA): una cuota por item, con su fecha y monto propios.
+  // Cubre meses NO consecutivos y montos distintos por cuota.
+  if (exp.schedule && exp.schedule.length) {
+    const total = exp.schedule.length
+    const base = exp.desc || exp.catName || 'Gasto'
+    return exp.schedule.map((it, i) => ({
+      id: 'e' + baseId + '_' + (i + 1), date: it.date, amount: it.amount, time: tm,
+      desc: base, cuota: { n: i + 1, total },
+      future: monthKeyOf(it.date) > curMonth, ...common,
+    }))
   }
   const n = exp.cuotas && exp.cuotas > 1 ? exp.cuotas : 1
   if (n === 1) return [{ id: 'e' + baseId, date: date0, amount: exp.amount, time: tm, desc: exp.desc || undefined, ...common }]
@@ -721,14 +732,15 @@ export default function App() {
       const tm = nowTime()
       const base = Date.now()
       const day = todayISO()
-      // Líneas que el parser de reglas NO entiende (sin monto) → candidatas a la IA (si está activa).
+      // Líneas COMPLEJAS (sin monto, o cuotas, o varios meses) → candidatas a la IA (si está activa).
       // El id de la tarjeta es determinístico ('a' + id) para poder reemplazarla al volver la IA.
-      const aiJobs = AI_ENABLED ? lines.map((line, i) => ({ id: 'a' + (base + i), line })).filter((_, i) => parseChat(s, gid, lines[i]).kind === 'unknown') : []
+      const aiJobs = AI_ENABLED ? lines.map((line, i) => ({ id: 'a' + (base + i), line })).filter((_, i) => needsAI(s, gid, lines[i])) : []
       // Categorización inteligente: gastos que quedaron "Sin categoría" con una descripción NUEVA
       // (no aprendida) → una llamada chica a la IA para categorizar (y aprender para la próxima).
       const catJobs = AI_ENABLED ? lines.map((line, i) => {
         const r = parseChat(s, gid, line)
         if (r.kind !== 'interpret' || r.exp.categoryId !== 'sincat' || !r.exp.desc) return null
+        if (needsAI(s, gid, line)) return null // la resuelve la IA (que también categoriza), no las reglas
         if ((s.catMemory || {})[normDesc(r.exp.desc)]) return null
         const n = r.exp.cuotas && r.exp.cuotas > 1 ? r.exp.cuotas : 1
         return { expId: n > 1 ? 'e' + (base + i) + '_1' : 'e' + (base + i), desc: r.exp.desc }
@@ -744,8 +756,13 @@ export default function App() {
           msgs.push({ id: 'u' + id, role: 'user', kind: 'user', text: line, time: tm, date: day, by: prev.profile.name })
           // parseChat ve las categorías ya creadas en este mismo envío (evita duplicarlas)
           const res = parseChat({ ...prev, categories: cats }, g, line)
+          // Complejo + IA activa → tarjeta transitoria "Pensando…" que aiResolve reemplaza (no guardamos
+          // por reglas). Si la IA está apagada, cae a reglas (piso offline: cuotas consecutivas).
+          const toAI = AI_ENABLED && needsAI({ ...prev, categories: cats }, g, line)
           let app
-          if (res.kind === 'interpret') {
+          if (toAI) {
+            app = { id: 'a' + id, role: 'app', kind: 'text', text: '✨ Pensando…' }
+          } else if (res.kind === 'interpret') {
             // Auto-guardado: se anota el gasto directo (sin preguntar ni confirmar); la tarjeta queda con "Editar".
             const exp = res.exp
             const dup = ledger.find((e) => e.kind !== 'transfer' && e.amount === exp.amount && e.payerId === exp.payerId && e.categoryId === exp.categoryId && (e.desc || '') === (exp.desc || ''))
@@ -799,6 +816,7 @@ export default function App() {
       setCard({ kind: 'text', text: '✨ Pensando…' })
       const ctx = {
         me: s.me || 'dani',
+        today: todayISO(),
         currency: (s.profile && s.profile.currency) || 'ARS',
         members: ((s.groups[g] || {}).members || []).map((m) => ({ id: m.id, short: m.short })),
         categories: (s.categories || []).filter((c) => c.id !== 'sincat').map((c) => ({ id: c.id, name: c.name })),
@@ -817,8 +835,9 @@ export default function App() {
         // fijas del texto, igual que el parser. Solo es "saldado" si se dice ambos/saldado/a mano.
         const low = ' ' + line.toLowerCase() + ' '
         const mode = (!(prev.groups[g] && prev.groups[g].personal) && /\b(ambos|los dos|entre los dos|saldad[oa]s?|a mano|pagamos)\b/.test(low)) ? 'settled' : 'group'
+        const baseAmount = Math.round(Number(raw.amount)) || 0
         const exp = {
-          amount: Math.round(Number(raw.amount)) || 0,
+          amount: baseAmount,
           categoryId: validCat ? raw.categoryId : 'sincat',
           desc: raw.desc || undefined,
           note: raw.note ? String(raw.note).slice(0, 300) : undefined,
@@ -828,16 +847,50 @@ export default function App() {
           mode,
         }
         if (!exp.amount) return { threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, kind: 'text', text: 'No te entendí del todo 🤔.' } : m)) } }
-        const entries = buildExpenseEntries(exp, Date.now(), todayISO(), nowTime(), prev.profile.name)
+        // Cronograma de cuotas. El cliente arma las fechas (la IA solo dice mes/día): evita errores de
+        // aritmética de años. Prioridad: schedule explícito (meses no consecutivos / montos distintos) >
+        // cuotas consecutivas desde startMonth > gasto único.
+        let schedule = null
+        if (Array.isArray(raw.schedule) && raw.schedule.length > 1) {
+          schedule = resolveSchedule(raw.schedule.map((it) => ({ month: it.month, day: it.day, amount: Math.round(Number(it.amount)) || baseAmount }))).filter((it) => it.amount > 0)
+        } else if (exp.cuotas) {
+          const start = monthToISO(raw.startMonth, raw.startDay) || todayISO()
+          schedule = Array.from({ length: exp.cuotas }, (_, k) => ({ date: addMonthsISO(start, k), amount: baseAmount }))
+        }
         // Aprende la categoría que eligió la IA (para no volver a llamarla con la misma descripción).
         const mem = validCat && exp.desc ? { ...(prev.catMemory || {}), [normDesc(exp.desc)]: exp.categoryId } : prev.catMemory
+        // Plan de cuotas (2+ entradas) → tarjeta de CONFIRMACIÓN (no guardamos hasta que confirme).
+        if (schedule && schedule.length > 1) {
+          const planExp = { ...exp, schedule, cuotas: schedule.length }
+          return {
+            catMemory: mem,
+            threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, role: 'app', kind: 'plan', exp: planExp } : m)) },
+          }
+        }
+        // Gasto único → autoguardado (como venía). Respeta la fecha si la IA dio mes/día.
+        const single = { ...exp, cuotas: null, date: monthToISO(raw.startMonth, raw.startDay) || undefined }
+        const entries = buildExpenseEntries(single, Date.now(), todayISO(), nowTime(), prev.profile.name)
         return {
           catMemory: mem,
           ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), ...entries] },
-          threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, role: 'app', kind: 'saved', expId: entries[0].id, exp: { ...exp, categoryId: entries[0].categoryId } } : m)) },
+          threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, role: 'app', kind: 'saved', expId: entries[0].id, exp: { ...single, categoryId: entries[0].categoryId } } : m)) },
         }
       })
     },
+    // Confirma un plan de cuotas: guarda todas las entradas del cronograma y deja la tarjeta como "guardado".
+    confirmPlan: (id) =>
+      set((prev) => {
+        const g = prev.groupId
+        const thread = prev.threads[g] || []
+        const msg = thread.find((m) => m.id === id)
+        if (!msg || !msg.exp || !msg.exp.schedule) return {}
+        const exp = msg.exp
+        const entries = buildExpenseEntries(exp, Date.now(), todayISO(), nowTime(), prev.profile.name)
+        return {
+          ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), ...entries] },
+          threads: { ...prev.threads, [g]: thread.map((m) => (m.id === id ? { ...m, kind: 'saved', expId: entries[0].id, exp } : m)) },
+        }
+      }),
 
     confirmExp: (id) =>
       set((prev) => {

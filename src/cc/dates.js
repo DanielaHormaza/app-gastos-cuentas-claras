@@ -65,6 +65,52 @@ export function parseSpanishDate(text) {
   return null
 }
 
+// Mes suelto SIN día ("agosto", "en agosto", "fecha de agosto") → primer día de ese mes.
+// Si el mes ya pasó este año, rueda al año siguiente. Devuelve ISO o null si no hay mes.
+// Se usa como fallback para el arranque de cuotas cuando no se dio una fecha con día.
+export function parseBareMonth(text) {
+  const t = ' ' + (text || '').toLowerCase() + ' '
+  const m = t.match(new RegExp('\\b(' + NOMBRES_MES + ')\\b'))
+  if (!m) return null
+  const mo = MESES[m[1]]
+  const now = new Date()
+  const y = mo < now.getMonth() ? now.getFullYear() + 1 : now.getFullYear()
+  return y + '-' + pad(mo + 1) + '-01'
+}
+
+// Convierte un nombre de mes (+ día opcional) a ISO, eligiendo el año más cercano hacia adelante
+// (si el mes ya pasó este año, rueda al que viene). Día por defecto = 1. null si el mes no es válido.
+// Lo usa el camino de IA: la IA devuelve mes+día y el cliente arma la fecha (evita que el LLM
+// se equivoque con la aritmética de años).
+export function monthToISO(monthName, day) {
+  const mo = MESES[String(monthName || '').toLowerCase()]
+  if (mo == null) return null
+  const now = new Date()
+  const y = mo < now.getMonth() ? now.getFullYear() + 1 : now.getFullYear()
+  const d = day && day >= 1 && day <= 31 ? day : 1
+  return y + '-' + pad(mo + 1) + '-' + pad(d)
+}
+
+// Resuelve un cronograma de cuotas [{month, day?, amount}] a [{date ISO, amount}], con roll-over de
+// año: el 1er mes toma el año más cercano hacia adelante; si un mes es <= al anterior, sube un año
+// (para planes que cruzan diciembre→enero). Ignora items con mes inválido.
+export function resolveSchedule(items) {
+  const now = new Date()
+  let year = null
+  let prevIdx = null
+  const out = []
+  for (const it of items || []) {
+    const idx = MESES[String(it.month || '').toLowerCase()]
+    if (idx == null) continue
+    if (year === null) year = idx < now.getMonth() ? now.getFullYear() + 1 : now.getFullYear()
+    else if (prevIdx !== null && idx <= prevIdx) year++
+    prevIdx = idx
+    const d = it.day && it.day >= 1 && it.day <= 31 ? it.day : 1
+    out.push({ date: year + '-' + pad(idx + 1) + '-' + pad(d), amount: it.amount })
+  }
+  return out
+}
+
 // Etiqueta relativa a hoy: Hoy / Ayer / Lun…Sáb (misma semana) / 15/jun/26.
 export function dayLabel(iso) {
   const today = new Date()

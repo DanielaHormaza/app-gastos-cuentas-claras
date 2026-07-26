@@ -393,6 +393,45 @@ function Message({ m, s, g, gid, lastE, mkExp, actions, deleted }) {
       </Row>
     )
   }
+  // plan de cuotas (viene de la IA): cronograma con fecha + monto por cuota, a confirmar.
+  if (m.kind === 'plan') {
+    const e = mkExp(m.exp)
+    const sched = m.exp.schedule || []
+    const total = sched.reduce((a, it) => a + it.amount, 0)
+    return (
+      <Row max="92%">
+        <Ai mt />
+        <div style={{ ...card, borderRadius: '16px 16px 16px 4px', padding: '13px 14px', minWidth: 234 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 10 }}>Detecté un plan de <b style={{ color: '#0B1220' }}>{sched.length} cuotas</b>:</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 9, background: '#EAF8F3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{e.catIcon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{e.catName}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#94A3B8', fontWeight: 700 }}>
+                <span style={{ width: 16, height: 16, borderRadius: 5, background: e.payerColor, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800 }}>{e.payerInitial}</span>{e.descText}
+              </div>
+            </div>
+          </div>
+          <div style={{ background: '#F6F8FC', borderRadius: 12, padding: '4px 11px' }}>
+            {sched.map((it, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: i < sched.length - 1 ? '1px solid #EAEFF6' : 'none' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 700, color: '#64748B' }}><span style={cuotaPill}>{i + 1}/{sched.length}</span>{fmtDateFull(it.date)}</span>
+                <span className="num" style={{ fontSize: 13.5, fontWeight: 800, color: '#0B1220' }}>{fmt(it.amount, m.exp.currency)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#94A3B8' }}>Total</span>
+            <span className="num" style={{ fontSize: 14, fontWeight: 800, color: '#0B1220' }}>{fmt(total, m.exp.currency)}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button onClick={() => actions.confirmPlan(m.id)} style={{ ...primaryBtn, flex: 1 }}>Confirmar {sched.length} cuotas</button>
+            <button onClick={() => actions.cancelMsg(m.id)} style={closeBtn}><Close /></button>
+          </div>
+        </div>
+      </Row>
+    )
+  }
   if (m.kind === 'duplicate') {
     const e = mkExp(m.exp)
     return (

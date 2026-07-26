@@ -2,7 +2,7 @@
  * Lógica de negocio de Cuentas Claras — funciones puras portadas del prototipo.
  * Todas reciben `state` como primer argumento (no mutan nada).
  */
-import { fmtDateFull, monthKeyOf, todayISO, parseSpanishDate, NOMBRES_MES } from './dates'
+import { fmtDateFull, monthKeyOf, todayISO, parseSpanishDate, parseBareMonth, NOMBRES_MES } from './dates'
 
 // Orden de monedas para mostrar (sin conversión, cada una por separado).
 // Monedas soportadas (SIN conversión: cada una se computa y muestra por separado).
@@ -1009,6 +1009,21 @@ export function setEqualSplit(cur) {
   return next
 }
 
+// ¿Conviene mandar esta línea a la IA en vez de resolverla con reglas? Sí cuando es COMPLEJA:
+// el parser no la entendió (unknown), o son cuotas (>1), o menciona 2+ meses (plan con fechas).
+// Las líneas simples ("8000 nafta pagó Juan") se quedan en reglas: instantáneas y sin costo.
+// Si la IA está apagada, App igual cae a reglas (piso offline) — esto solo elige el ruteo.
+export function needsAI(state, gid, line) {
+  const r = parseChat(state, gid, line)
+  if (r.kind === 'unknown') return true
+  if (r.kind === 'interpret' && r.exp) {
+    if (r.exp.cuotas && r.exp.cuotas > 1) return true
+    const months = (String(line).toLowerCase().match(new RegExp('\\b(' + NOMBRES_MES + ')\\b', 'g')) || []).length
+    if (months >= 2) return true
+  }
+  return false
+}
+
 export function parseChat(state, gid, text) {
   const g = state.groups[gid]
   const members = g.members
@@ -1028,10 +1043,13 @@ export function parseChat(state, gid, text) {
   else if (/\b(pen|sol|soles)\b/.test(t)) currency = 'PEN'
   else if (/\b(gbp|libra|libras)\b/.test(t)) currency = 'GBP'
   // fecha en lenguaje natural ("31 de mayo", "ayer", "hoy"); null = hoy al confirmar
-  const date = parseSpanishDate(text)
+  let date = parseSpanishDate(text)
   const sm = t.match(/(\d{1,2})\s*[/]\s*(\d{1,2})/)
   const cm = t.match(/(\d+)\s*cuota/)
   const cuotas = cm ? parseInt(cm[1], 10) : null
+  // Cuotas sin fecha con día: si se nombró un mes suelto ("primera cuota en agosto"), arranco ahí
+  // (día 1). Solo para cuotas, para no cambiar cómo se fecha un gasto normal.
+  if (!date && cuotas) date = parseBareMonth(text)
   // monto: limpio del texto los números que NO son monto (fecha, cuotas, split)
   let work = t.replace(new RegExp('\\d{1,2}\\s+de\\s+(' + NOMBRES_MES + ')(\\s+de\\s+\\d{4})?', 'g'), ' ').replace(/\bd[ií]a\s+\d{1,2}/g, ' ')
   if (cm) work = work.replace(cm[0], ' ')
@@ -1070,8 +1088,9 @@ export function parseChat(state, gid, text) {
     const n = m.short.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     if (new RegExp('\\b' + n + '\\b').test(t)) payerId = m.id
   }
-  // correcciones sobre el último
-  if (/(eran|era|son|ser[ií]an|perd[oó]n)/.test(t) && amount) return { kind: 'correction', cor: { field: 'amount', amount } }
+  // correcciones sobre el último. OJO: los disparadores llevan \b (si no, "era" matchea dentro de
+  // "primera") y NO aplican cuando hay cuotas ("3 cuotas… primera cuota…" es un gasto nuevo, no una corrección).
+  if (!cm && /\b(eran|era|son|ser[ií]an|perd[oó]n)\b/.test(t) && amount) return { kind: 'correction', cor: { field: 'amount', amount } }
   if (/(lo|la)\s+pag[oó]\b/.test(t) && payerId && payerId !== me && !amount) return { kind: 'correction', cor: { field: 'payer', payerId } }
   if (/(cambialo|cambiala|cambiar|pasalo|pasala)\s+a\s+/.test(t)) {
     const after = text.toLowerCase().split(/\s+a\s+/).pop().trim()
