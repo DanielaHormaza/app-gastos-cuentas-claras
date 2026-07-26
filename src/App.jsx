@@ -1052,17 +1052,22 @@ export default function App() {
         const base = (String(id).match(/\d+/) || [])[0]
         const card = thread.find((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
         if (!card) return { msgMenu: null }
-        const expId = card.expId
-        const e = (prev.ledgers[g] || []).find((it) => it.id === expId)
-        let summary = ''
-        if (e) {
-          const me = prev.me || 'dani'
-          const gp = prev.groups[g] || {}
-          const payerText = gp.personal ? '' : e.mode === 'settled' ? 'saldado' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + memberById(prev, g, e.payerId).short
-          summary = (e.desc || 'Sin nombre') + ' · ' + fmt(e.amount, e.currency) + (payerText ? ' · ' + payerText : '')
-        }
-        const l = (prev.ledgers[g] || []).filter((it) => it.id !== expId)
-        const nt = thread.map((m) => (m.expId === expId && (m.kind === 'saved' || m.kind === 'deleted') ? { ...m, kind: 'deleted', text: summary } : m))
+        const e = (prev.ledgers[g] || []).find((it) => it.id === card.expId)
+        if (!e) return { msgMenu: null }
+        // ¿Es una cuota de un plan? Las cuotas comparten prefijo de id: e<base>_<n>. Si lo es,
+        // borramos TODAS las del plan (no solo la referenciada por la tarjeta).
+        const pm = String(card.expId).match(/^(e.*_)\d+$/)
+        const isPlan = !!(pm && e.cuota && e.cuota.total > 1)
+        const doomed = isPlan
+          ? new Set((prev.ledgers[g] || []).filter((it) => String(it.id).startsWith(pm[1])).map((it) => it.id))
+          : new Set([card.expId])
+        const me = prev.me || 'dani'
+        const gp = prev.groups[g] || {}
+        const payerText = gp.personal ? '' : e.mode === 'settled' ? 'saldado' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + memberById(prev, g, e.payerId).short
+        const cuotaTxt = isPlan ? ' · ' + doomed.size + ' cuotas' : ''
+        const summary = (e.desc || 'Sin nombre') + ' · ' + fmt(e.amount, e.currency) + cuotaTxt + (payerText ? ' · ' + payerText : '')
+        const l = (prev.ledgers[g] || []).filter((it) => !doomed.has(it.id))
+        const nt = thread.map((m) => (doomed.has(m.expId) && (m.kind === 'saved' || m.kind === 'deleted') ? { ...m, kind: 'deleted', text: summary } : m))
         return { ledgers: { ...prev.ledgers, [g]: l }, threads: { ...prev.threads, [g]: nt }, msgMenu: null }
       }),
 

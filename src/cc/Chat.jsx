@@ -357,13 +357,19 @@ function MsgMenuSheet({ s, actions }) {
   const m = thread.find((x) => x.id === s.msgMenu)
   if (!m) return null
   const base = (String(m.id).match(/\d+/) || [])[0]
-  const hasExpense = thread.some((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
+  const savedCard = thread.find((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
+  const exp = savedCard ? (s.ledgers[gid] || []).find((e) => e.id === savedCard.expId) : null
+  const nCuotas = exp && exp.cuota && exp.cuota.total > 1 ? exp.cuota.total : 0
   let title, desc, cta, onCta, danger
   if (m.kind === 'userdel') {
     title = 'Restaurar mensaje'; desc = 'Vuelve a mostrarse en el chat.'; cta = 'Restaurar'; danger = false
     onCta = () => actions.restoreMsg(m.id)
-  } else if (hasExpense) {
-    title = 'Eliminar gasto'; desc = 'Este mensaje tiene un gasto guardado. Se elimina el gasto y se ajustan los saldos (queda registrado como eliminado).'; cta = 'Eliminar gasto'; danger = true
+  } else if (savedCard) {
+    title = nCuotas ? `Eliminar plan de ${nCuotas} cuotas` : 'Eliminar gasto'
+    desc = nCuotas
+      ? `Este mensaje cargó un plan de ${nCuotas} cuotas. Se eliminan TODAS y se ajustan los saldos (queda registrado como eliminado).`
+      : 'Este mensaje tiene un gasto guardado. Se elimina el gasto y se ajustan los saldos (queda registrado como eliminado).'
+    cta = nCuotas ? `Eliminar ${nCuotas} cuotas` : 'Eliminar gasto'; danger = true
     onCta = () => actions.deleteMsgExpense(m.id)
   } else {
     title = 'Eliminar mensaje'; desc = 'Se marca como eliminado (gris) en el chat, en todos tus dispositivos. Podés restaurarlo.'; cta = 'Eliminar'; danger = true
