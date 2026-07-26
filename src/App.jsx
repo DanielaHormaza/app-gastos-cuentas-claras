@@ -18,7 +18,7 @@ import Login from './Login'
 import { supabase } from './supabase'
 import { loadCloudState, cloudUpsertExpense, cloudDeleteExpense, cloudUpsertCategory, cloudSaveSplit, cloudUpsertMessage, cloudDeleteMessage, cloudCreateGroup, cloudUpsertGroup, cloudUpsertMember, cloudSaveAliases, cloudSaveCurrency, cloudSetArchived, cloudDeleteGroup, cloudSaveCatMemory } from './cloud'
 import { setAmountsHidden, CURRENCIES } from './cc/logic'
-import { aiParseExpense, AI_ENABLED } from './ai'
+import { aiParseExpense, aiCategorize, AI_ENABLED } from './ai'
 
 // Huella de un gasto (para detectar cambios y sincronizar solo lo que cambió).
 const expFingerprint = (e) => [e.amount, e.categoryId, e.payerId, e.mode, e.currency, e.desc, e.note, e.date, e.time, e.methodId, e.future, e.from, e.to, e.editedBy, e.editedAt, JSON.stringify(e.cuota || null), JSON.stringify(e.excluded || [])].join('|')
@@ -724,6 +724,15 @@ export default function App() {
       // Líneas que el parser de reglas NO entiende (sin monto) → candidatas a la IA (si está activa).
       // El id de la tarjeta es determinístico ('a' + id) para poder reemplazarla al volver la IA.
       const aiJobs = AI_ENABLED ? lines.map((line, i) => ({ id: 'a' + (base + i), line })).filter((_, i) => parseChat(s, gid, lines[i]).kind === 'unknown') : []
+      // Categorización inteligente: gastos que quedaron "Sin categoría" con una descripción NUEVA
+      // (no aprendida) → una llamada chica a la IA para categorizar (y aprender para la próxima).
+      const catJobs = AI_ENABLED ? lines.map((line, i) => {
+        const r = parseChat(s, gid, line)
+        if (r.kind !== 'interpret' || r.exp.categoryId !== 'sincat' || !r.exp.desc) return null
+        if ((s.catMemory || {})[normDesc(r.exp.desc)]) return null
+        const n = r.exp.cuotas && r.exp.cuotas > 1 ? r.exp.cuotas : 1
+        return { expId: n > 1 ? 'e' + (base + i) + '_1' : 'e' + (base + i), desc: r.exp.desc }
+      }).filter(Boolean) : []
       set((prev) => {
         const g = prev.groupId
         let cats = prev.categories
@@ -765,6 +774,22 @@ export default function App() {
       })
       // Fallback con IA: para lo que el parser no entendió, lo interpretamos con OpenAI (async, no bloquea).
       aiJobs.forEach((jb) => actions.aiResolve(jb.id, jb.line))
+      // Categorización inteligente de los gastos que quedaron "Sin categoría" (async, no bloquea).
+      catJobs.forEach((jb) => actions.aiCategorizeExp(jb.expId, jb.desc))
+    },
+    // Categoriza un gasto "Sin categoría" con la IA (una vez por descripción) y lo aprende en la memoria.
+    aiCategorizeExp: async (expId, desc) => {
+      const g = s.groupId
+      const cats = (s.categories || []).filter((c) => !['sincat', 'transfer', 'inicial'].includes(c.id)).map((c) => ({ id: c.id, name: c.name }))
+      if (!cats.length) return
+      const catId = await aiCategorize(desc, cats)
+      if (!catId) return
+      set((prev) => {
+        if (!(prev.categories || []).some((c) => c.id === catId)) return {}
+        const led = (prev.ledgers[g] || []).map((e) => (e.id === expId && (!e.categoryId || e.categoryId === 'sincat') ? { ...e, categoryId: catId } : e))
+        const mem = { ...(prev.catMemory || {}), [normDesc(desc)]: catId } // aprende: la próxima vez, sin IA
+        return { ledgers: { ...prev.ledgers, [g]: led }, catMemory: mem }
+      })
     },
     // Reintenta interpretar una línea con la IA y, si sale, guarda el gasto reemplazando la tarjeta.
     aiResolve: async (msgId, line) => {
@@ -803,7 +828,10 @@ export default function App() {
         }
         if (!exp.amount) return { threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, kind: 'text', text: 'No te entendí del todo 🤔.' } : m)) } }
         const entries = buildExpenseEntries(exp, Date.now(), todayISO(), nowTime(), prev.profile.name)
+        // Aprende la categoría que eligió la IA (para no volver a llamarla con la misma descripción).
+        const mem = validCat && exp.desc ? { ...(prev.catMemory || {}), [normDesc(exp.desc)]: exp.categoryId } : prev.catMemory
         return {
+          catMemory: mem,
           ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), ...entries] },
           threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, role: 'app', kind: 'saved', expId: entries[0].id, exp: { ...exp, categoryId: entries[0].categoryId } } : m)) },
         }
@@ -943,7 +971,12 @@ export default function App() {
     onDate: (v) => set((prev) => applyEdit(prev, { date: v || todayISO() })),
     onCatQuery: (v) => set({ catQuery: v }),
     setNewCatIcon: (icon) => set({ newCatIcon: icon }),
-    pickCat: (id) => set((prev) => ({ ...applyEdit(prev, { categoryId: id }), editPanel: null, catQuery: '', newCatIcon: null })),
+    pickCat: (id) => set((prev) => {
+      // Al categorizar a mano, lo aprendemos (descripción → categoría) para futuros gastos iguales.
+      const desc = prev.draft && prev.draft.desc
+      const mem = desc && id !== 'sincat' ? { ...(prev.catMemory || {}), [normDesc(desc)]: id } : prev.catMemory
+      return { ...applyEdit(prev, { categoryId: id }), catMemory: mem, editPanel: null, catQuery: '', newCatIcon: null }
+    }),
     onCreateCat: () =>
       set((prev) => {
         const name = prev.catQuery.trim()

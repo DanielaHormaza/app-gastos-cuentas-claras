@@ -20,3 +20,20 @@ export async function aiParseExpense(text, context) {
     return null
   }
 }
+
+// Categorización liviana: dada una descripción y las categorías, devuelve el id que mejor aplica
+// (o null). Se usa solo cuando el parser no encontró categoría y la descripción es nueva.
+export async function aiCategorize(desc, categories) {
+  try {
+    const r = await fetch('/api/ai/categorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ desc, categories }),
+    })
+    const data = await r.json()
+    if (!data || !data.ok) return null
+    return data.categoryId || null
+  } catch {
+    return null
+  }
+}
