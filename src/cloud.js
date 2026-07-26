@@ -204,7 +204,7 @@ export async function loadCloudState(userId) {
   const msgKey = (id) => { const x = String(id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
   const threads = {}
   for (const gid in groups) {
-    threads[gid] = [{ id: 'w' + gid, role: 'app', kind: 'text', text: groups[gid].personal ? 'Anotá tus gastos personales. Ej: “3000 café”.' : 'Cargá un gasto escribiéndolo, ej: “8000 nafta pagó Juan”.' }]
+    threads[gid] = [] // sin burbuja de sugerencia en el chat: la sugerencia vive en el placeholder del input
   }
   const rank = (r) => (r.kind === 'user' ? 0 : 1) // a igual momento, el mensaje tipeado va antes que la tarjeta
   const msgs = (msgR.data || []).slice().sort((a, b) => msgKey(a.id) - msgKey(b.id) || rank(a) - rank(b))

@@ -92,6 +92,14 @@ function Fields({ s, g, dr, actions, splitLabels }) {
         <CurrencyPicker value={dr.currency || 'ARS'} onChange={actions.pickCurrency} compact />
       </div>
 
+      <div style={label}>FECHA DEL GASTO</div>
+      <input
+        type="date"
+        value={dr.date || ''}
+        onChange={(e) => actions.onDate(e.target.value)}
+        style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: 13, padding: '11px 13px', fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, color: '#0B1220', outline: 'none', marginBottom: 18, background: '#fff' }}
+      />
+
       {g.personal ? (
         <>
           <div style={label}>MEDIO DE PAGO <span style={{ color: '#C3CCDA' }}>(opcional)</span></div>

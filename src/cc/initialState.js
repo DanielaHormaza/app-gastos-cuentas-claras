@@ -86,15 +86,9 @@ export function makeInitialState() {
     catMemory: {}, // memoria de categorización manual: descripción normalizada → categoryId (recuerda para el futuro)
     payments: { pareja: [], asado: [], personal: [] },
     threads: {
-      pareja: [
-        { id: 't1', role: 'app', kind: 'text', text: 'Cargá un gasto escribiéndolo, ej: “8000 nafta pagó Juan”. El saldo inicial de Splitwise ya está cargado.' },
-      ],
-      asado: [
-        { id: 'at1', role: 'app', kind: 'text', text: '¡Grupo creado! Cargá un gasto escribiéndolo acá, ej: “18000 bebidas pagó Pato”.' },
-      ],
-      personal: [
-        { id: 'it1', role: 'app', kind: 'text', text: 'Anotá tus gastos personales. Ej: “3000 café”.' },
-      ],
+      pareja: [],
+      asado: [],
+      personal: [],
     },
     categories: [
       { id: 'salida', icon: '🍽️', name: 'Salida / Delivery' },
