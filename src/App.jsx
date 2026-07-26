@@ -65,10 +65,12 @@ const mergeThreads = (prevThreads, cloudThreads) => {
   const out = {}
   const gids = new Set([...Object.keys(cloudThreads || {}), ...Object.keys(prevThreads || {})])
   for (const g of gids) {
-    if (g === 'personal') { out[g] = (prevThreads || {})[g] || (cloudThreads || {})[g] || []; continue }
+    // Las tarjetas de texto de la app (intros viejas, "No te entendí", "Registré el pago"…) son
+    // efímeras: NO se conservan entre cargas. Así se limpia el intro viejo que quedó en localStorage.
+    if (g === 'personal') { out[g] = ((prevThreads || {})[g] || (cloudThreads || {})[g] || []).filter((m) => m.kind !== 'text'); continue }
     const byId = {}
     for (const m of (cloudThreads || {})[g] || []) byId[m.id] = m
-    for (const m of (prevThreads || {})[g] || []) if (!MSG_SYNC_KINDS.has(m.kind) && !isIntro(m) && !byId[m.id]) byId[m.id] = m
+    for (const m of (prevThreads || {})[g] || []) if (!MSG_SYNC_KINDS.has(m.kind) && m.kind !== 'text' && !isIntro(m) && !byId[m.id]) byId[m.id] = m
     // a igual momento, el mensaje tipeado (user) va antes que la tarjeta de la app
     const rank = (m) => (m.kind === 'user' ? 0 : 1)
     out[g] = Object.values(byId).sort((a, b) => msgKey(a) - msgKey(b) || rank(a) - rank(b))
@@ -801,7 +803,7 @@ export default function App() {
         const entries = buildExpenseEntries(exp, Date.now(), todayISO(), nowTime(), prev.profile.name)
         return {
           ledgers: { ...prev.ledgers, [g]: [...(prev.ledgers[g] || []), ...entries] },
-          threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { id: msgId, role: 'app', kind: 'saved', expId: entries[0].id, exp: { ...exp, categoryId: entries[0].categoryId } } : m)) },
+          threads: { ...prev.threads, [g]: (prev.threads[g] || []).map((m) => (m.id === msgId ? { ...m, role: 'app', kind: 'saved', expId: entries[0].id, exp: { ...exp, categoryId: entries[0].categoryId } } : m)) },
         }
       })
     },
