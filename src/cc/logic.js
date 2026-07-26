@@ -313,7 +313,16 @@ export function computeFriend(state, pid) {
         return
       }
       const meShare = shareFor(state, gid, e, me)
-      if (meShare === null) return // saldado
+      if (meShare === null) {
+        // Gasto SALDADO (pagaron ambos): no genera deuda, pero es un gasto compartido real →
+        // se muestra en los movimientos del 1:1 con delta 0 (sin impacto en el saldo).
+        const excl = e.excluded || []
+        if (excl.includes(me) || excl.includes(pid)) return
+        const catS = catById(state, e.categoryId)
+        const payerS = memberById(state, gid, e.payerId)
+        expenses.push({ id: e.id, gid, gname: g.name, ggrad: g.gradient, ginitial: g.initial, direct: oneToOne, categoryId: e.categoryId, catIcon: catS.icon, catName: e.desc || catS.name, cuota: e.cuota || null, amount: e.amount, cur, date: e.date, payerId: e.payerId, payerShort: payerS.short, delta: 0 })
+        return
+      }
       const pidShare = shareFor(state, gid, e, pid)
       let delta = 0
       if (e.payerId === me) delta = e.amount * pidShare        // pagaste vos → la persona te debe su parte

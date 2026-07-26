@@ -459,8 +459,9 @@ function Message({ m, s, g, gid, lastE, mkExp, actions }) {
               </div>
             </div>
           )}
-          <div style={{ display: 'flex', gap: 14, marginTop: 11, paddingLeft: 2 }}>
+          <div style={{ display: 'flex', gap: 14, marginTop: 11, paddingLeft: 2, alignItems: 'center', justifyContent: 'space-between' }}>
             <span onClick={() => actions.editExp(m.id)} style={{ fontSize: 12.5, fontWeight: 800, color: '#7C3AED', cursor: 'pointer' }}>Editar</span>
+            {m.date && <span style={{ fontSize: 11, fontWeight: 700, color: '#B6BFCC' }}>{fmtDateFull(m.date)}</span>}
           </div>
         </div>
       </Row>
