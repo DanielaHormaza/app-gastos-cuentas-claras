@@ -47,7 +47,7 @@ const groupSnapshot = (groups) => {
 // ----- Chat compartido -----
 // Solo se sincronizan los mensajes de historial (lo que se tipea + gastos confirmados).
 // Las tarjetas transitorias (interpret/ambiguous/payment/correction/duplicate) quedan per-device.
-const MSG_SYNC_KINDS = new Set(['user', 'saved'])
+const MSG_SYNC_KINDS = new Set(['user', 'saved', 'deleted'])
 const isIntro = (m) => typeof m.id === 'string' && m.id.startsWith('w')
 const msgKey = (m) => { if (isIntro(m)) return -1; const x = String(m.id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
 const msgFp = (m) => [m.kind, m.text, m.expId, m.by, m.time, m.date].join('|')
@@ -967,8 +967,19 @@ export default function App() {
     onDelete: () =>
       set((prev) => {
         const g = prev.groupId
+        const e = (prev.ledgers[g] || []).find((it) => it.id === prev.editId)
+        // Resumen de lo que se borra, para dejar el registro en el chat (tarjeta "Gasto eliminado").
+        let summary = ''
+        if (e) {
+          const me = prev.me || 'dani'
+          const gp = prev.groups[g] || {}
+          const payerText = gp.personal ? '' : e.mode === 'settled' ? 'saldado' : e.payerId === me ? 'Pagaste vos' : 'Pagó ' + memberById(prev, g, e.payerId).short
+          summary = (e.desc || 'Sin nombre') + ' · ' + fmt(e.amount, e.currency) + (payerText ? ' · ' + payerText : '')
+        }
         const l = (prev.ledgers[g] || []).filter((it) => it.id !== prev.editId)
-        return { ledgers: { ...prev.ledgers, [g]: l }, editId: null, draft: null, editPanel: null }
+        // La(s) tarjeta(s) del chat que apuntaban a este gasto pasan a "Gasto eliminado" con el resumen.
+        const thread = (prev.threads[g] || []).map((m) => (m.expId === prev.editId && (m.kind === 'saved' || m.kind === 'deleted') ? { ...m, kind: 'deleted', text: summary } : m))
+        return { ledgers: { ...prev.ledgers, [g]: l }, threads: { ...prev.threads, [g]: thread }, editId: null, draft: null, editPanel: null }
       }),
 
     // ---- gastos futuros / históricos ----

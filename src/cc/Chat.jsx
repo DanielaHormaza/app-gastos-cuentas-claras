@@ -230,6 +230,8 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   // Hilo combinado: mensajes propios del espacio + (en un 1:1) gastos compartidos que VIENEN de otros
   // grupos (etiquetados con su origen), ordenados por fecha. Agrupados por día.
   const num = (id) => { const m = String(id || '').match(/\d+/); return m ? Number(m[0]) : 0 }
+  // Bases (nro de id) de los gastos eliminados → sus mensajes de usuario van en gris tachado.
+  const deletedBases = new Set(thread.filter((m) => m.kind === 'deleted').map((m) => num(m.id)))
   // En "Mis gastos" se inyecta tu parte de los gastos de grupos; en un 1:1, lo compartido de otros grupos.
   const xExps = g.personal ? myShareExpenses(s) : is1to1 && peer ? computeFriend(s, peer.id).expenses.filter((e) => !e.direct) : []
   const items = [
@@ -291,7 +293,7 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
                   {isPeer ? (
                     <PeerMessage m={m} s={s} g={g} showSender={showSender} />
                   ) : (
-                    <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} />
+                    <Message m={m} s={s} g={g} gid={gid} lastE={lastE} mkExp={mkExp} actions={actions} deleted={m.kind === 'user' && deletedBases.has(num(m.id))} />
                   )}
                   {ts && <div style={{ fontSize: 9.5, fontWeight: 700, color: '#B6BFCC', padding: '3px 6px 0' }}>{!isPeer && m.by ? m.by + ' · ' : ''}{ts}</div>}
                 </div>
@@ -338,10 +340,23 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
 }
 
 /** Renderiza una burbuja del hilo según su tipo. */
-function Message({ m, s, g, gid, lastE, mkExp, actions }) {
-  // usuario
+function Message({ m, s, g, gid, lastE, mkExp, actions, deleted }) {
+  // usuario. Si su gasto fue eliminado, la burbuja va en gris y tachada (marca que ya no está).
   if (m.kind === 'user') {
+    if (deleted) return <div style={{ alignSelf: 'flex-end', maxWidth: '82%', background: '#EEF1F6', color: '#94A3B8', padding: '11px 15px', borderRadius: '18px 18px 4px 18px', fontSize: 14, fontWeight: 600, textDecoration: 'line-through' }}>{m.text}</div>
     return <div style={{ alignSelf: 'flex-end', maxWidth: '82%', background: 'linear-gradient(135deg,#3B82F6,#7C3AED)', color: '#fff', padding: '11px 15px', borderRadius: '18px 18px 4px 18px', fontSize: 14, fontWeight: 600, boxShadow: '0 10px 22px -14px rgba(124,58,237,.7)' }}>{m.text}</div>
+  }
+  // gasto eliminado: tarjeta gris con el resumen de lo que era (queda el registro).
+  if (m.kind === 'deleted') {
+    return (
+      <Row max="92%">
+        <div style={{ ...aiAvatar, marginTop: 2, background: '#E2E8F0' }}><span style={{ fontSize: 14 }}>🗑️</span></div>
+        <div style={{ ...card, borderRadius: '16px 16px 16px 4px', padding: '12px 14px', minWidth: 200 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#94A3B8', marginBottom: m.text ? 6 : 0 }}>Gasto eliminado</div>
+          {m.text && <div style={{ fontSize: 13, fontWeight: 700, color: '#94A3B8', textDecoration: 'line-through' }}>{m.text}</div>}
+        </div>
+      </Row>
+    )
   }
   // texto simple de la IA
   if (m.kind === 'text') {
