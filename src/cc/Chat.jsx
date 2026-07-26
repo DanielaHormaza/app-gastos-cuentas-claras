@@ -713,7 +713,7 @@ function srcOptionsFor(s) {
   for (const gid in s.groups) {
     if (gid === 'personal') continue
     const g = s.groups[gid]
-    if (isOneToOne(s, gid)) { const peer = peerOf(s, gid) || {}; opts.push({ value: gid, label: peer.short || g.name, kind: 'person', color: peer.id ? personColor(s, peer.id) : g.gradient, initial: peer.initial || g.initial }) }
+    if (isOneToOne(s, gid)) { const peer = peerOf(s, gid) || {}; opts.push({ value: gid, label: 'Con ' + (peer.short || g.name), kind: 'person', color: peer.id ? personColor(s, peer.id) : g.gradient, initial: peer.initial || g.initial }) }
     else opts.push({ value: gid, label: g.name, kind: 'group', gradient: g.gradient, initial: g.initial })
   }
   return opts
@@ -777,7 +777,7 @@ function PersonalLedger({ s, actions }) {
   const byDay = {}
   rows.forEach((r) => { const k = fmtDateFull(r.date); if (!byDay[k]) { byDay[k] = []; order.push(k) } byDay[k].push(r) })
   const src = s.personalSrc || 'all'
-  const bannerLabel = src === 'personal' ? 'Gastado · solo personales' : src !== 'all' ? 'Gastado en ' + (srcOptionsFor(s).find((o) => o.value === src) || {}).label : 'Gastado · vos + tu parte'
+  const bannerLabel = src === 'personal' ? 'Gastado · solo personales' : src !== 'all' ? 'Gastado · ' + (srcOptionsFor(s).find((o) => o.value === src) || {}).label : 'Gastado · vos + tu parte'
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#F4F6FA' }}>
       <div style={{ margin: '14px 16px 6px', borderRadius: 16, padding: '13px 16px', background: 'linear-gradient(135deg,rgba(46,204,177,.14),rgba(124,58,237,.14))', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

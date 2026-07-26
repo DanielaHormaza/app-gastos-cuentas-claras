@@ -122,15 +122,6 @@ export default function Profile({ s, actions }) {
           Es la moneda que se usa al cargar un gasto sin aclarar otra. Podés cambiarla cuando quieras; los gastos ya cargados no se modifican.
         </div>
 
-        <div style={sectionLabel}>PREFERENCIAS</div>
-        <div style={{ background: '#fff', border: '1px solid #EEF1F6', borderRadius: 14, overflow: 'hidden', marginBottom: 22, boxShadow: cardShadow }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px' }}>
-            <span style={{ fontSize: 16 }}>🔔</span>
-            <div style={{ flex: 1, fontWeight: 700, fontSize: 14, color: '#0B1220' }}>Notificaciones</div>
-            <div style={{ width: 42, height: 24, borderRadius: 999, background: '#7C3AED', position: 'relative' }}><div style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff' }} /></div>
-          </div>
-        </div>
-
         {personalMonths.length > 0 && (
           <>
             <div style={sectionLabel}>EXPORTAR MIS GASTOS</div>

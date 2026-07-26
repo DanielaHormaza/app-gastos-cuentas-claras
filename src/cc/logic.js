@@ -378,7 +378,7 @@ export function myShareExpenses(state) {
     const g = state.groups[gid]
     if (g.personal) continue
     // En un 1:1 el "origen" se etiqueta con el nombre de la persona, no con el del espacio.
-    const gname = isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
+    const gname = isOneToOne(state, gid) ? 'Con ' + ((peerOf(state, gid) || {}).short || g.name) : g.name
     ;(state.ledgers[gid] || []).forEach((e) => {
       if (isUpcoming(e) || e.kind === 'transfer') return
       const share = consumeShare(state, gid, e)
@@ -407,7 +407,7 @@ export function personalFeed(state, future = false) {
   for (const gid in state.groups) {
     const g = state.groups[gid]
     if (g.personal) continue
-    const gname = isOneToOne(state, gid) ? ((peerOf(state, gid) || {}).short || g.name) : g.name
+    const gname = isOneToOne(state, gid) ? 'Con ' + ((peerOf(state, gid) || {}).short || g.name) : g.name
     ;(state.ledgers[gid] || []).forEach((e) => {
       if (isUpcoming(e) !== future || e.kind === 'transfer') return
       const share = consumeShare(state, gid, e)
