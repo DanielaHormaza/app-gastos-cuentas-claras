@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { makeInitialState } from './cc/initialState'
+import { makeInitialState, DEFAULT_CATEGORIES } from './cc/initialState'
 import { fmtDateFull } from './cc/dates'
 import { isUpcoming } from './cc/logic'
 
@@ -198,8 +198,9 @@ export async function loadCloudState(userId) {
   }
 
   const categories = catsR.data.map((c) => ({ id: c.id, icon: c.icon, name: c.name }))
-  // Bucket "Sin categoría": debe existir siempre (los gastos no reconocidos caen acá).
-  if (!categories.some((c) => c.id === 'sincat')) categories.push({ id: 'sincat', icon: '🏷️', name: 'Sin categoría' })
+  // Set base del sistema: nos aseguramos de que SIEMPRE existan (se mergean si faltan), sin
+  // necesidad de correr SQL. Las custom del usuario ya vienen de la tabla. 'sincat' incluido.
+  for (const d of DEFAULT_CATEGORIES) if (!categories.some((c) => c.id === d.id)) categories.push({ ...d })
 
   // chat COMPARTIDO: intro por grupo + mensajes de historial desde la nube (user/saved), ordenados por creación.
   const msgKey = (id) => { const x = String(id || '').match(/\d+/); return x ? Number(x[0]) : 0 }

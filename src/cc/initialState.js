@@ -22,6 +22,34 @@ export const BRAND_GRADIENT = 'linear-gradient(135deg,#2ECCB1,#3B82F6,#7C3AED)'
 // Gradiente de marca para botones primarios / avatar IA / FAB.
 export const METHOD_COLORS = ['#7C3AED', '#3B82F6', '#2ECCB1', '#F59E0B', '#EC4899', '#64748B']
 
+// Categorías "del sistema": set base curado, siempre presente (se mergea al cargar). No se borran
+// (para no romper gastos que las usan). Las custom que cree el usuario se suman a esta lista.
+// 'inicial', 'transfer' y 'sincat' son especiales (saldo inicial, transferencias, sin categoría).
+export const DEFAULT_CATEGORIES = [
+  { id: 'salida', icon: '🍽️', name: 'Salida / Delivery' },
+  { id: 'super', icon: '🛒', name: 'Supermercado' },
+  { id: 'servicios', icon: '💡', name: 'Servicios / Facturas' },
+  { id: 'suscripciones', icon: '📺', name: 'Suscripciones' },
+  { id: 'ocio', icon: '🎬', name: 'Ocio' },
+  { id: 'transporte', icon: '🚕', name: 'Transporte' },
+  { id: 'hogar', icon: '🛋️', name: 'Hogar / Bazar' },
+  { id: 'ropa', icon: '👕', name: 'Ropa' },
+  { id: 'salud', icon: '💊', name: 'Salud' },
+  { id: 'educacion', icon: '🎓', name: 'Educación' },
+  { id: 'mascotas', icon: '🐾', name: 'Mascotas' },
+  { id: 'belleza', icon: '💇', name: 'Belleza / Cuidado' },
+  { id: 'impuestos', icon: '🧾', name: 'Impuestos / Trámites' },
+  { id: 'regalos', icon: '🎁', name: 'Regalos' },
+  { id: 'alquiler', icon: '🏠', name: 'Alquiler' },
+  { id: 'viaje', icon: '✈️', name: 'Viaje' },
+  { id: 'otro', icon: '🏷️', name: 'Otro' },
+  { id: 'inicial', icon: '⚖️', name: 'Saldo inicial' },
+  { id: 'transfer', icon: '🔁', name: 'Pagos y transferencias' },
+  { id: 'sincat', icon: '🏷️', name: 'Sin categoría' },
+]
+// ¿Es una categoría del sistema (no borrable)? Las custom del usuario sí se pueden borrar/fusionar.
+export const isSystemCategory = (id) => DEFAULT_CATEGORIES.some((c) => c.id === id)
+
 export function makeInitialState() {
   return {
     // ---- identidad ----
@@ -90,21 +118,7 @@ export function makeInitialState() {
       asado: [],
       personal: [],
     },
-    categories: [
-      { id: 'salida', icon: '🍽️', name: 'Salida / Delivery' },
-      { id: 'super', icon: '🛒', name: 'Supermercado' },
-      { id: 'servicios', icon: '💡', name: 'Servicios' },
-      { id: 'ocio', icon: '🎬', name: 'Ocio' },
-      { id: 'transporte', icon: '🚕', name: 'Transporte' },
-      { id: 'regalos', icon: '🎁', name: 'Regalos' },
-      { id: 'alquiler', icon: '🏠', name: 'Alquiler' },
-      { id: 'viaje', icon: '✈️', name: 'Viaje' },
-      { id: 'salud', icon: '💊', name: 'Salud' },
-      { id: 'otro', icon: '🏷️', name: 'Otro' },
-      { id: 'inicial', icon: '⚖️', name: 'Saldo inicial' },
-      { id: 'transfer', icon: '🔁', name: 'Pagos y transferencias' },
-      { id: 'sincat', icon: '🏷️', name: 'Sin categoría' },
-    ],
+    categories: DEFAULT_CATEGORIES.map((c) => ({ ...c })),
     groups: {
       pareja: {
         id: 'pareja', name: 'Pareja', initial: 'P',
