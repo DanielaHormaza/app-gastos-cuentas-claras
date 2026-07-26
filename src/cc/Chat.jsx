@@ -12,6 +12,9 @@ import { dayLabel, fmtDateFull, fmtDateDow, todayISO, monthKeyOf } from './dates
 // Nombre de cada vista (para el menú y la leyenda del header).
 const VIEW_TITLES = { chat: 'Chat', ledger: 'Movimientos diarios', months: 'Gastos futuros', hist: 'Gastos históricos', review: 'Revisión de datos' }
 
+// Etiqueta "cta n/total" para discriminar los gastos en cuotas en las listas de movimientos.
+const cuotaPill = { background: '#EEF3FF', color: '#3B82F6', padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }
+
 const card = { background: '#fff', border: '1px solid #EAEEF4', boxShadow: '0 6px 18px -12px rgba(15,23,42,.35)' }
 const aiAvatar = { width: 28, height: 28, borderRadius: '50%', background: BRAND_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: 13, fontWeight: 800 }
 const primaryBtn = { border: 'none', background: BRAND_GRADIENT, color: '#fff', fontFamily: 'inherit', fontWeight: 800, fontSize: 13, padding: 9, borderRadius: 11, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(59,130,246,.7)' }
@@ -629,7 +632,7 @@ function LedgerView({ s, g, c, bannerLabel, lines, actions }) {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{it.title}</div>
-                  <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 700 }}>{it.sub}</div>
+                  <div style={{ fontSize: 11.5, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>{it.sub}{it.cuotaText && <span style={cuotaPill}>{it.cuotaText}</span>}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="num" style={{ fontWeight: 700, fontSize: 15, color: '#0B1220' }}>{it.amountText}</div>
@@ -694,7 +697,7 @@ function MgRow({ s, r, actions }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{r.title}</div>
         <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-          {!r.own && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{r.gname}</span>}{sub}
+          {!r.own && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{r.gname}</span>}{sub}{r.cuota && <span style={cuotaPill}>cta {r.cuota.n}/{r.cuota.total}</span>}
         </div>
       </div>
       <div style={{ textAlign: 'right' }}>
@@ -911,7 +914,7 @@ function FriendLedger({ s, peer, lines, actions }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 800, fontSize: 14.5, color: '#0B1220' }}>{it.title}</div>
                   <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                    {it.showChip && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{it.gname}</span>}{it.payerText}
+                    {it.showChip && <span style={{ background: '#F1ECFD', color: '#7C3AED', padding: '1px 7px', borderRadius: 999, fontSize: 10 }}>{it.gname}</span>}{it.payerText}{it.cuotaText && <span style={cuotaPill}>{it.cuotaText}</span>}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>

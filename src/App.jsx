@@ -108,13 +108,14 @@ const buildExpenseEntries = (exp, baseId, day, tm, createdBy) => {
   }
   const n = exp.cuotas && exp.cuotas > 1 ? exp.cuotas : 1
   if (n === 1) return [{ id: 'e' + baseId, date: date0, amount: exp.amount, time: tm, desc: exp.desc || undefined, ...common }]
+  // El nombre queda limpio (sin "cuota i/N"): el número de cuota se muestra como etiqueta aparte (cuota:{n,total}).
   const base = exp.desc || exp.catName || 'Gasto'
   const out = []
   for (let i = 0; i < n; i++) {
     const d = addMonthsISO(date0, i)
     out.push({
       id: 'e' + baseId + '_' + (i + 1), date: d, amount: exp.amount, time: tm,
-      desc: base + ' cuota ' + (i + 1) + '/' + n, cuota: { n: i + 1, total: n },
+      desc: base, cuota: { n: i + 1, total: n },
       future: monthKeyOf(d) > curMonth, ...common,
     })
   }
