@@ -70,7 +70,9 @@ const mergeThreads = (prevThreads, cloudThreads) => {
     if (g === 'personal') { out[g] = ((prevThreads || {})[g] || (cloudThreads || {})[g] || []).filter((m) => m.kind !== 'text'); continue }
     const byId = {}
     for (const m of (cloudThreads || {})[g] || []) byId[m.id] = m
-    for (const m of (prevThreads || {})[g] || []) if (!MSG_SYNC_KINDS.has(m.kind) && m.kind !== 'text' && !isIntro(m) && !byId[m.id]) byId[m.id] = m
+    // Conservamos las tarjetas locales que la nube todavía no tiene (optimista: user/saved/deleted/
+    // interpret… pendientes de sync no deben desaparecer). Solo excluimos lo efímero: intros y textos.
+    for (const m of (prevThreads || {})[g] || []) if (!isIntro(m) && m.kind !== 'text' && !byId[m.id]) byId[m.id] = m
     // a igual momento, el mensaje tipeado (user) va antes que la tarjeta de la app
     const rank = (m) => (m.kind === 'user' ? 0 : 1)
     out[g] = Object.values(byId).sort((a, b) => msgKey(a) - msgKey(b) || rank(a) - rank(b))
