@@ -64,17 +64,27 @@ const msgSnapshot = (threads) => {
 const mergeThreads = (prevThreads, cloudThreads) => {
   const out = {}
   const gids = new Set([...Object.keys(cloudThreads || {}), ...Object.keys(prevThreads || {})])
+  // a igual momento, el mensaje tipeado (user) va antes que la tarjeta de la app
+  const rank = (m) => (m.kind === 'user' ? 0 : 1)
   for (const g of gids) {
     // Las tarjetas de texto de la app (intros viejas, "No te entendí", "Registré el pago"…) son
     // efímeras: NO se conservan entre cargas. Así se limpia el intro viejo que quedó en localStorage.
-    if (g === 'personal') { out[g] = ((prevThreads || {})[g] || (cloudThreads || {})[g] || []).filter((m) => m.kind !== 'text'); continue }
+    if (g === 'personal') {
+      // El personal no sincroniza mensajes: las tarjetas vivas están en local y el historial se
+      // reconstruye desde el ledger en la nube (cloud). Unimos ambos (dedup por gasto) para no
+      // perder ni las recién cargadas ni las de otros dispositivos. OJO: un array vacío es truthy,
+      // así que un `local || cloud` dejaría afuera la reconstrucción cuando el local está vacío.
+      const local = ((prevThreads || {})[g] || []).filter((m) => m.kind !== 'text')
+      const seen = new Set(local.map((m) => m.expId).filter(Boolean))
+      const extra = ((cloudThreads || {})[g] || []).filter((m) => m.kind !== 'text' && (!m.expId || !seen.has(m.expId)))
+      out[g] = [...local, ...extra].sort((a, b) => msgKey(a) - msgKey(b) || rank(a) - rank(b))
+      continue
+    }
     const byId = {}
     for (const m of (cloudThreads || {})[g] || []) byId[m.id] = m
     // Conservamos las tarjetas locales que la nube todavía no tiene (optimista: user/saved/deleted/
     // interpret… pendientes de sync no deben desaparecer). Solo excluimos lo efímero: intros y textos.
     for (const m of (prevThreads || {})[g] || []) if (!isIntro(m) && m.kind !== 'text' && !byId[m.id]) byId[m.id] = m
-    // a igual momento, el mensaje tipeado (user) va antes que la tarjeta de la app
-    const rank = (m) => (m.kind === 'user' ? 0 : 1)
     out[g] = Object.values(byId).sort((a, b) => msgKey(a) - msgKey(b) || rank(a) - rank(b))
   }
   return out

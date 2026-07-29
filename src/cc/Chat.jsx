@@ -234,8 +234,12 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   const deletedBases = new Set(thread.filter((m) => m.kind === 'deleted').map((m) => num(m.id)))
   // En "Mis gastos" se inyecta tu parte de los gastos de grupos; en un 1:1, lo compartido de otros grupos.
   const xExps = g.personal ? myShareExpenses(s) : is1to1 && peer ? computeFriend(s, peer.id).expenses.filter((e) => !e.direct) : []
+  // Tarjeta "Gasto guardado" cuyo gasto ya no existe (borrado en otro dispositivo, o todavía sin
+  // sincronizar) y sin snapshot local → se ocultaba como una tarjeta vacía ("es raro"). La filtramos
+  // hasta que se pueda resolver (vuelve sola cuando el gasto aparece en el ledger).
+  const savedResolvable = (m) => m.kind !== 'saved' || m.exp || (s.ledgers[gid] || []).some((x) => x.id === m.expId)
   const items = [
-    ...thread.map((m) => ({ t: 'msg', date: m.date || todayISO(), key: num(m.id), m })),
+    ...thread.filter(savedResolvable).map((m) => ({ t: 'msg', date: m.date || todayISO(), key: num(m.id), m })),
     ...xExps.map((e) => ({ t: 'x', date: e.date, key: num(e.id), e })),
   ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.key - b.key))
   // Mensajes de usuario cuyo gasto fue eliminado → burbuja gris. Se detecta por adyacencia:
