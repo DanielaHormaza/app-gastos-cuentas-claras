@@ -51,11 +51,13 @@ const MSG_SYNC_KINDS = new Set(['user', 'saved', 'deleted', 'userdel'])
 const isIntro = (m) => typeof m.id === 'string' && m.id.startsWith('w')
 const msgKey = (m) => { if (isIntro(m)) return -1; const x = String(m.id || '').match(/\d+/); return x ? Number(x[0]) : 0 }
 const msgFp = (m) => [m.kind, m.text, m.expId, m.by, m.time, m.date].join('|')
-// Snapshot id→{m,gid,fp} de los mensajes sincronizables (espejo). 'personal' es de un solo usuario: no se sincroniza.
+// Snapshot id→{m,gid,fp} de los mensajes sincronizables (espejo). El personal también se sincroniza
+// (es privado por RLS): así se conserva el TEXTO que tipeaste, no solo la tarjeta del gasto. Al escribir
+// se traduce la clave 'personal' → su id real en la nube (cloudId). Las tarjetas de historial (_hist,
+// reconstruidas desde el ledger) NO se re-sincronizan.
 const msgSnapshot = (threads) => {
   const map = {}
   for (const gid in threads) {
-    if (gid === 'personal') continue
     for (const m of threads[gid]) if (MSG_SYNC_KINDS.has(m.kind) && !m._hist) map[m.id] = { m, gid, fp: msgFp(m) }
   }
   return map
@@ -70,14 +72,22 @@ const mergeThreads = (prevThreads, cloudThreads) => {
     // Las tarjetas de texto de la app (intros viejas, "No te entendí", "Registré el pago"…) son
     // efímeras: NO se conservan entre cargas. Así se limpia el intro viejo que quedó en localStorage.
     if (g === 'personal') {
-      // El personal no sincroniza mensajes: las tarjetas vivas están en local y el historial se
-      // reconstruye desde el ledger en la nube (cloud). Unimos ambos (dedup por gasto) para no
-      // perder ni las recién cargadas ni las de otros dispositivos. OJO: un array vacío es truthy,
-      // así que un `local || cloud` dejaría afuera la reconstrucción cuando el local está vacío.
-      const local = ((prevThreads || {})[g] || []).filter((m) => m.kind !== 'text')
-      const seen = new Set(local.map((m) => m.expId).filter(Boolean))
-      const extra = ((cloudThreads || {})[g] || []).filter((m) => m.kind !== 'text' && (!m.expId || !seen.has(m.expId)))
-      out[g] = [...local, ...extra].sort((a, b) => msgKey(a) - msgKey(b) || rank(a) - rank(b))
+      // El personal ahora SÍ sincroniza sus mensajes (para conservar el texto tipeado, no solo la
+      // tarjeta del gasto). Unimos lo local (texto/tarjetas recién cargados, quizá sin sincronizar aún)
+      // con lo de la nube (mensajes sincronizados + reconstrucción del historial), SIN duplicar: dedup
+      // por id de mensaje y por gasto (una sola tarjeta por gasto). Lo local tiene prioridad.
+      const seenId = new Set()
+      const seenExp = new Set()
+      const merged = []
+      const add = (m) => {
+        if (m.kind === 'text' || seenId.has(m.id)) return
+        if (m.expId) { if (seenExp.has(m.expId)) return; seenExp.add(m.expId) }
+        seenId.add(m.id)
+        merged.push(m)
+      }
+      ;((prevThreads || {})[g] || []).forEach(add)
+      ;((cloudThreads || {})[g] || []).forEach(add)
+      out[g] = merged.sort((a, b) => msgKey(a) - msgKey(b) || rank(a) - rank(b))
       continue
     }
     const byId = {}
@@ -430,16 +440,20 @@ export default function App() {
     catSyncRef.current = new Set(s.categories.map((c) => c.id))
   }, [s.categories, dataReady])
 
-  // espejo del chat → Supabase: sincroniza altas/ediciones/bajas de mensajes de historial (user/saved)
+  // espejo del chat → Supabase: sincroniza altas/ediciones/bajas de mensajes de historial (user/saved).
+  // El personal usa la clave cliente 'personal' pero en la nube tiene su id propio (cloudId): se traduce
+  // al escribir. Si todavía no se creó (cloudId null), se saltea hasta que exista.
   useEffect(() => {
     if (!dataReady) { msgSyncRef.current = null; return }
+    const personalCloudId = s.groups.personal && s.groups.personal.cloudId
+    const realGid = (gid) => (gid === 'personal' ? personalCloudId : gid)
     const cur = msgSnapshot(s.threads)
     const prev = msgSyncRef.current
     if (prev === null) { msgSyncRef.current = cur; return } // primera vez tras cargar: solo snapshot
-    for (const id in cur) if (!prev[id] || prev[id].fp !== cur[id].fp) cloudUpsertMessage(cur[id].m, cur[id].gid)
+    for (const id in cur) if (!prev[id] || prev[id].fp !== cur[id].fp) { const rg = realGid(cur[id].gid); if (rg) cloudUpsertMessage(cur[id].m, rg) }
     for (const id in prev) if (!cur[id]) cloudDeleteMessage(id)
     msgSyncRef.current = cur
-  }, [s.threads, dataReady])
+  }, [s.threads, dataReady, s.groups.personal && s.groups.personal.cloudId])
 
   // espejo de alias (cómo llamás a cada persona) → perfil en Supabase, para que te sigan en todos tus dispositivos.
   useEffect(() => {

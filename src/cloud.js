@@ -215,14 +215,15 @@ export async function loadCloudState(userId) {
   const rank = (r) => (r.kind === 'user' ? 0 : 1) // a igual momento, el mensaje tipeado va antes que la tarjeta
   const msgs = (msgR.data || []).slice().sort((a, b) => msgKey(a.id) - msgKey(b.id) || rank(a) - rank(b))
   for (const r of msgs) {
-    if (!threads[r.group_id]) continue
+    const tg = gidOf(r.group_id) // el personal se guarda bajo su id propio (personal_<uid>) → clave cliente 'personal'
+    if (!threads[tg]) continue
     const m = { id: r.id, role: r.role, kind: r.kind }
     if (r.text != null) m.text = r.text
     if (r.exp_id) m.expId = r.exp_id
     if (r.by_name) m.by = r.by_name
     if (r.date) m.date = r.date
     if (r.time) m.time = r.time
-    threads[r.group_id].push(m)
+    threads[tg].push(m)
   }
 
   // Reconstrucción de historial: los gastos que NO tienen tarjeta de chat (cargados antes de que
