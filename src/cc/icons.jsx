@@ -25,6 +25,9 @@ export const Send = ({ size = 20, color = '#fff', w = 2.6 }) => (
 export const Search = ({ size = 17, color = '#94A3B8', w = 2.4 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
 )
+export const Mic = ({ size = 20, color = '#7C3AED', w = 2.2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" /></svg>
+)
 export const Trash = ({ size = 18, color = '#E11D5B', w = 2.2 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke={color} strokeWidth={w} {...base}><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
 )

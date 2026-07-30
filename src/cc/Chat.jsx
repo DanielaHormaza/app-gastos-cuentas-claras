@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, Fragment } from 'react'
 import { compute, balanceLines, catById, memberById, descFor, fmt, rowFor, catMatch, curMatch, payerMatch, textMatch, groupCategories, groupCurrencies, groupPayers, daniPctAt, splitAt, byRecency, personColor, isOneToOne, peerOf, friendBalanceLines, friendMovementsByDay, groupBalanceLines, computeFriend, myShareExpenses, personalSpent, personalFeed, curList, isUpcoming, CURRENCIES, monthShortLabel, monthLongLabel, TONE } from './logic'
 import { BRAND_GRADIENT } from './initialState'
-import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin, Search } from './icons'
+import { Back, ChevronDown, Gear, Check, Close, Send, Lock, Chevron, EyeToggle, Pin, Search, Mic } from './icons'
 import { Futuros, Historicos } from './GroupViews'
 import CategoryFilter, { Filters, CurrencyFilter, SourceFilter } from './CategoryFilter'
 import Config from './Config'
@@ -186,6 +186,15 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   const scrollToBottom = () => { const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }
   const onScroll = (e) => { const el = e.currentTarget; setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80) }
 
+  // Notas de voz: el botón ya está en la UI, pero la función todavía no está conectada.
+  // Al tocarlo se muestra un cartelito "próximamente" que se esconde solo.
+  const [voiceSoon, setVoiceSoon] = useState(false)
+  useEffect(() => {
+    if (!voiceSoon) return
+    const t = setTimeout(() => setVoiceSoon(false), 2600)
+    return () => clearTimeout(t)
+  }, [voiceSoon])
+
   // "Ver en el chat": salta y resalta el mensaje del gasto (para ver qué se escribió al cargarlo).
   const [highlightId, setHighlightId] = useState(null)
   useEffect(() => {
@@ -330,6 +339,11 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
         <div style={{ padding: '0 20px 5px', fontSize: 11.5, fontWeight: 700, color: '#94A3B8', fontStyle: 'italic' }}>{typingName} está escribiendo…</div>
       )}
 
+      {/* aviso "próximamente" de notas de voz (aparece al tocar el micrófono, se esconde solo) */}
+      {!readOnly && voiceSoon && (
+        <div style={{ padding: '0 20px 6px', fontSize: 11.5, fontWeight: 800, color: '#7C3AED', display: 'flex', alignItems: 'center', gap: 6, animation: 'ccFade .15s ease' }}>🎤 Notas de voz · próximamente</div>
+      )}
+
       {/* input / read-only */}
       {readOnly ? (
         <div style={{ padding: '13px 16px 22px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderTop: '1px solid #EEF1F6' }}>
@@ -347,6 +361,8 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
             rows={1}
             style={{ flex: 1, background: '#F4F6FA', border: 'none', outline: 'none', borderRadius: 22, padding: '13px 16px', fontSize: 14, color: '#0B1220', fontWeight: 600, fontFamily: 'inherit', resize: 'none', maxHeight: 120, lineHeight: 1.35 }}
           />
+          {/* Notas de voz: botón visible; la grabación/transcripción todavía no está conectada. */}
+          <button onClick={() => setVoiceSoon(true)} aria-label="Grabar nota de voz (próximamente)" title="Notas de voz · próximamente" style={{ width: 46, height: 46, border: '1.5px solid #E6E1F6', background: '#F5F2FD', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}><Mic size={20} color="#7C3AED" /></button>
           <button onClick={actions.sendChat} style={{ width: 46, height: 46, border: 'none', borderRadius: '50%', background: BRAND_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 6px 16px -6px rgba(59,130,246,.6)', cursor: 'pointer' }}><Send /></button>
         </div>
       )}
