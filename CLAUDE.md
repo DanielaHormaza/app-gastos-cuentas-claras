@@ -4,7 +4,7 @@
 
 ## Cuentas a usar (siempre las personales)
 
-- **GitHub:** `DanielaHormaza` (repo privado `DanielaHormaza/cuentas-claras`).
+- **GitHub:** `DanielaHormaza` (repo privado `DanielaHormaza/app-gastos-cuentas-claras`).
   - `gh` suele quedar con `DanielaPuramente` (trabajo) activa. Antes de pushear o usar `gh`:
     ```bash
     gh auth switch --user DanielaHormaza
