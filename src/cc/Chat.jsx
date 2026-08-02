@@ -253,10 +253,15 @@ function ChatView({ s, g, c, is1to1, peer, bannerLabel, lines, inputHint, readOn
   ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.key - b.key))
   // Mensajes de usuario cuyo gasto fue eliminado → burbuja gris. Se detecta por adyacencia:
   // el mensaje de usuario inmediatamente anterior a una tarjeta "Gasto eliminado" (van juntos).
+  // Solo el mensaje INMEDIATAMENTE anterior (ahí está siempre el par user↔tarjeta, mismo id base).
+  // Antes el bucle caminaba hacia atrás sin límite y, si la tarjeta "eliminado" venía del historial
+  // sin su mensaje, terminaba tachando un mensaje ajeno de más arriba (bug). El caso normal igual lo
+  // cubre `deletedBases` (match por número de id), así que acotarlo no pierde nada correcto.
   const grayUserIds = new Set()
   items.forEach((it, i) => {
     if (it.t === 'msg' && it.m.kind === 'deleted') {
-      for (let j = i - 1; j >= 0; j--) { const p = items[j]; if (p.t === 'msg' && p.m.kind === 'user') { grayUserIds.add(p.m.id); break } }
+      const p = items[i - 1]
+      if (p && p.t === 'msg' && p.m.kind === 'user') grayUserIds.add(p.m.id)
     }
   })
   const dayDivider = (date) => (date === todayISO() ? 'HOY' : fmtDateFull(date).toUpperCase())
