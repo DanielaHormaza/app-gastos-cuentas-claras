@@ -385,7 +385,10 @@ function MsgMenuSheet({ s, actions }) {
   const m = thread.find((x) => x.id === s.msgMenu)
   if (!m) return null
   const base = (String(m.id).match(/\d+/) || [])[0]
-  const savedCard = thread.find((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
+  // La tarjeta con el gasto puede ser la respuesta viva ('a'+base) o el mismo mensaje si ya es una
+  // tarjeta guardada (incluye las `_hist` reconstruidas del historial, id 'h_<expId>'). Así el menú
+  // ofrece "Eliminar gasto/plan" también para gastos reconstruidos (antes caía a "Eliminar mensaje").
+  const savedCard = (m.kind === 'saved' && m.expId) ? m : thread.find((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
   const exp = savedCard ? (s.ledgers[gid] || []).find((e) => e.id === savedCard.expId) : null
   const nCuotas = exp && exp.cuota && exp.cuota.total > 1 ? exp.cuota.total : 0
   let title, desc, cta, onCta, danger
@@ -626,7 +629,7 @@ function Message({ m, s, g, gid, lastE, mkExp, actions, deleted }) {
     return (
       <Row max="92%">
         <div style={{ ...aiAvatar, marginTop: 2 }}><Check size={15} color="#fff" /></div>
-        <div style={{ ...card, borderRadius: '16px 16px 16px 4px', padding: '13px 14px', minWidth: 210 }}>
+        <div {...longPress} style={{ ...card, borderRadius: '16px 16px 16px 4px', padding: '13px 14px', minWidth: 210, userSelect: 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 800, color: '#0E9F86', marginBottom: 9 }}><Check size={14} color="#0E9F86" />Gasto guardado</div>
           {e && (
             <div style={{ background: '#F6F8FC', borderRadius: 12, padding: '11px 12px' }}>

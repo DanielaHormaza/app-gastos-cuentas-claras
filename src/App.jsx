@@ -1074,7 +1074,12 @@ export default function App() {
         const g = prev.groupId
         const thread = prev.threads[g] || []
         const base = (String(id).match(/\d+/) || [])[0]
-        const card = thread.find((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
+        // La tarjeta con el gasto puede ser la respuesta viva del chat ('a'+base) O el mismo mensaje
+        // long-presseado si ya es una tarjeta guardada (incluye las `_hist` reconstruidas del historial,
+        // con id 'h_<expId>'). Sin esto, borrar un plan reconstruido caía al "Eliminar mensaje" y el
+        // gasto (y sus cuotas futuras) nunca se iba.
+        const self = thread.find((x) => x.id === id)
+        const card = (self && self.kind === 'saved' && self.expId) ? self : thread.find((x) => x.id === 'a' + base && x.kind === 'saved' && x.expId)
         if (!card) return { msgMenu: null }
         const e = (prev.ledgers[g] || []).find((it) => it.id === card.expId)
         if (!e) return { msgMenu: null }
